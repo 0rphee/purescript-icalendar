@@ -1,0 +1,3 @@
+[submodule "iCalendar"]
+	path = iCalendar-haskell
+	url = git@github.com:chrra/iCalendar.git
