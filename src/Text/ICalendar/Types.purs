@@ -3,7 +3,7 @@
 {- # LANGUAGE OverloadedStrings  # -}
 -- | ICalendar types, based on RFC5545.
 
-module Text.ICalendar.Types where
+module Text.ICalendar.Types (module Text.ICalendar.Types) where
 
 -- module Text.ICalendar.Types
 
@@ -33,6 +33,9 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (T2)
+import URI (Fragment, HierPath, Host, Path, Port, Query, UserInfo)
+import URI.HostPortPair (HostPortPair)
+import URI.URI as URI
 
 -- import Time (Posix)
 
@@ -66,11 +69,7 @@ data MimeType = MimeType -- TODO: temporal
 type MIMEType =
   MimeType
 
--- | Couldn't find any URI package. The closest one is `elm/url`.
-
-data Url = Url
-type URI =
-  Url
+-- type URI = Url
 
 type Integer =
   Int
@@ -97,6 +96,7 @@ data Language = Language CI
 -- deriving
 -- ( Eq, Show, Ord, Typeable )
 
+type URI = URI.URI UserInfo (HostPortPair Host Port) Path HierPath Query Fragment
 type CalAddress = URI
 
 -- | One other parameter, either x-param or iana-param.
@@ -792,7 +792,7 @@ data DurationProp = DurationProp
 -- deriving ( Show, Eq, Ord, dataable )
 
 data FreeBusy = FreeBusy
-  { freeBusydata :: FBdata
+  { freeBusydata :: FBType
   , freeBusyPeriods :: Set UTCPeriod
   , freeBusyOther :: OtherParams
   }
@@ -812,16 +812,16 @@ data UTCPeriod
 
 -- | Free/Busy Time data. 3.2.9.
 --
--- Unrecognized FBdataX MUST be treated as Busy.
+-- Unrecognized FBTypeX MUST be treated as Busy.
 
-data FBdata
+data FBType
   = Free
   | Busy
   | BusyUnavailable
   | BusyTentative
-  | FBdataX CI -- deriving ( Show, Eq, Ord, dataable )
+  | FBTypeX CI -- deriving ( Show, Eq, Ord, dataable )
 
-instance Default FBdata where
+instance Default FBType where
   def = Busy
 
 -- | Time Transparency. 3.8.2.7.
@@ -874,7 +874,7 @@ data TZUrl = TZUrl
 
 data Attendee = Attendee
   { attendeeValue :: CalAddress
-  , attendeeCUdata :: CUdata -- ^ 'def' = 'Individual'
+  , attendeeCUType :: CUType -- ^ 'def' = 'Individual'
   , attendeeMember :: Set CalAddress
   , attendeeRole :: Role -- ^ 'def' = 'ReqParticipant'
   , attendeePartStat :: PartStat -- ^ 'def' = 'PartStatNeedsAction'
@@ -891,17 +891,17 @@ data Attendee = Attendee
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Calendar User data. 3.2.3.
 --
--- Unrecognized CUdataX MUST be treated as Unknown.
+-- Unrecognized CUTypeX MUST be treated as Unknown.
 
-data CUdata
+data CUType
   = Individual
   | Group
   | Resource
   | Room
   | Unknown
-  | CUdataX CI -- deriving ( Show, Eq, Ord, dataable )
+  | CUTypeX CI -- deriving ( Show, Eq, Ord, dataable )
 
-instance Default CUdata where
+instance Default CUType where
   def = Individual
 
 -- | Role. 3.2.16.
@@ -984,7 +984,7 @@ data Range
 
 data RelatedTo = RelatedTo
   { relatedToValue :: Text
-  , relatedTodata :: Relationshipdata
+  , relatedTodata :: RelationshipType
   , relatedToOther :: OtherParams
   }
 
@@ -992,15 +992,15 @@ data RelatedTo = RelatedTo
 -- ( Show, Eq, Ord, dataable )
 -- | Relationship data. 3.2.15.
 --
--- Unrecognized RelationshipdataX values MUST be treated as Parent.
+-- Unrecognized RelationshipTypeX values MUST be treated as Parent.
 
-data Relationshipdata
+data RelationshipType
   = Parent
   | Child
   | Sibling
-  | RelationshipdataX CI -- deriving ( Show, Eq, Ord, dataable )
+  | RelationshipTypeX CI -- deriving ( Show, Eq, Ord, dataable )
 
-instance Default Relationshipdata where
+instance Default RelationshipType where
   def = Parent
 
 -- | Uniform Resource Locator. 3.8.4.6.
