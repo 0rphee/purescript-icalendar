@@ -32,10 +32,10 @@ import Data.Set (Set)
 import Data.Set as S
 import Data.String as BS
 import Data.Time as Time
-import Data.Undefined.NoProblem (undefined)
 import Data.Unit (Unit(..))
 import Text.ICalendar.Types as Ver
 import URI.URI as URI
+import Codec.MIME.Type
 
 data UPrintf = UPrintf -- TODO 
 
@@ -49,11 +49,8 @@ data Builder = Builder -- TODO
 
 data ByteString = BS -- TODO
 
-fromIntegral :: a
-fromIntegral = undefined
-
-showMIMEType :: a
-showMIMEType = undefined
+-- showMIMEType :: a
+-- showMIMEType = undefined
 
 -- | Functions for encoding into bytestring builders.
 data EncodingFunctions = EncodingFunctions
@@ -404,7 +401,7 @@ instance IsProperty Description where
 instance IsProperty Geo where
   printProperty (Geo a) = ln $ do
     prop "GEO".geoOther
-    out <<< {--}  undefined $ printf "%.6f;%.6f" a.geoLat a.geoLong
+    out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
 
 instance IsProperty LastModified where
   printProperty (LastModified a) = ln $ do
@@ -570,7 +567,7 @@ prop
   -> a
   -> ContentPrinter ()
 prop b x = do
-  put (fromIntegral $ BS.length b)
+  put (BS.length b)
   -- tell (Bu.lazyByteString b) TODO
   traverse_ param $ toParam x
   out ":"

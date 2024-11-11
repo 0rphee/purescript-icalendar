@@ -7,7 +7,7 @@ module Text.ICalendar.Types (module Text.ICalendar.Types) where
 
 -- module Text.ICalendar.Types
 
--- import           Codec.MIME.Type            (MIMEType)
+import Codec.MIME.Type (MIMEType)
 -- import           Data.ByteString.Lazy.Char8 (ByteString)
 -- import Data.Default exposing (..)
 -- import Data.Text.Lazy exposing (Text, pack)
@@ -61,13 +61,6 @@ showVersion :: Version -> String
 showVersion (Version { versionBranch, versionTags }) =
   ((List.intercalate "." (map show versionBranch)))
     <> (Foldable.fold (map (\x -> "-" <> x) versionTags))
-
--- | Doesn't have all the categories that the haskell package has, but it'll have to do.
-
-data MimeType = MimeType -- TODO: temporal
-
-type MIMEType =
-  MimeType
 
 -- type URI = Url
 
