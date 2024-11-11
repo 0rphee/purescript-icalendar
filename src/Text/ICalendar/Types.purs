@@ -7,18 +7,10 @@ module Text.ICalendar.Types (module Text.ICalendar.Types) where
 
 -- module Text.ICalendar.Types
 
-import Codec.MIME.Type (MIMEType)
--- import           Data.ByteString.Lazy.Char8 (ByteString)
--- import Data.Default exposing (..)
--- import Data.Text.Lazy exposing (Text, pack)
--- import Data.Semigroup as Sem
--- import Data.Typeable exposing (Typeable)
--- import Data.Version exposing (Version(..), showVersion)
--- import Data.Time
--- import Network.URI exposing (URI)
-
 import Prelude
 
+import Codec.MIME.Type (MIMEType)
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.CaseInsensitive (CI)
 import Data.CaseInsensitive as CI
 import Data.Default (class Default, def)
@@ -518,7 +510,7 @@ data Attachment
       }
   | BinaryAttachment
       { attachFmtdata :: Maybe MIMEType
-      , attachContent :: String
+      , attachContent :: Uint8Array
       , attachOther :: OtherParams
       }
 

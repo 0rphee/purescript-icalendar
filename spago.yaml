@@ -1,6 +1,8 @@
 package:
   name: icalendar-elm
   dependencies:
+    - arraybuffer-types
+    - b64
     - console
     - data-default
     - datetime

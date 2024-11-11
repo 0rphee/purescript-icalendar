@@ -19,23 +19,28 @@ import Data.Tuple.Nested
 import Prelude
 import Text.ICalendar.Types
 
+import Codec.MIME.Type (MIMEType, showMIMEType)
 import Control.Monad.RWS (get, put, tell, RWS, asks, modify, runRWS)
 import Data.Array as List
+import Data.Binary.Base64 as B64
 import Data.CaseInsensitive as CI
 import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Foldable (for_, sequence_, traverse_)
+import Data.Foldable as Foldable
 import Data.List (List(..), (:))
 import Data.Maybe (Maybe(..))
+import Data.Ord (abs, signum)
 import Data.Profunctor.Strong ((&&&))
 import Data.Set (Set)
 import Data.Set as S
+import Data.String (toUpper)
 import Data.String as BS
+import Data.String as T
 import Data.Time as Time
 import Data.Unit (Unit(..))
 import Text.ICalendar.Types as Ver
 import URI.URI as URI
-import Codec.MIME.Type
 
 data UPrintf = UPrintf -- TODO 
 
@@ -45,18 +50,21 @@ class PrintfType t where
 printf :: forall t. PrintfType t => String -> t
 printf fmts = spr fmts Nil
 
-data Builder = Builder -- TODO
+type Builder = String -- TODO
 
 data ByteString = BS -- TODO
-
--- showMIMEType :: a
--- showMIMEType = undefined
 
 -- | Functions for encoding into bytestring builders.
 data EncodingFunctions = EncodingFunctions
   { efChar2Bu :: Char -> Builder
   , efChar2Len :: Char -> Int -- ^ How many octets the character is encoded.
   }
+
+divMod :: Int -> Int -> Int /\ Int
+divMod a b = l /\ r
+  where
+  l = div a b
+  r = mod a b
 
 utf8Len :: Char -> Int
 utf8Len c = h
@@ -814,82 +822,82 @@ printShowN = printN printShow
 
 printN :: (a -> ContentPrinter ()) -> (List a) -> ContentPrinter ()
 printN m (x : xs) = m x *> sequence_ $ map (\x' -> putc ',' *> m x') xs
-printN _ _ = pure Unit
+printN _ _ = pure unit
 
 printShowUpper :: Show a => a -> ContentPrinter ()
-printShowUpper = out <<< {-T.pack <<< -} map toUpper <<< show
+printShowUpper = out <<< {-T.pack <<< map -} toUpper <<< show
 
-printUTCTime :: Time.UTCTime -> ContentPrinter ()
-printUTCTime = out <<< {-T.pack <<< -}  formatTime "%C%y%m%dT%H%M%SZ"
+-- printUTCTime :: Time.UTCTime -> ContentPrinter ()
+-- printUTCTime = out <<< {-T.pack <<< -}  formatTime "%C%y%m%dT%H%M%SZ"
 
 class IsValue a where
   printValue :: a -> ContentPrinter ()
 
 instance IsValue ICalVersion where
-  printValue (MaxICalVersion a) = out <<< {-T.pack $ -}  Ver.showVersion versionMax
+  printValue (MaxICalVersion a) = out <<< {-T.pack $ -}  Ver.showVersion a.versionMax
   printValue (MinMaxICalVersion a) = do
-    out <<< {-T.pack $ -}  Ver.showVersion versionMin
+    out <<< {-T.pack $ -}  Ver.showVersion a.versionMin
     putc ';'
-    out <<< {-T.pack $ -}  Ver.showVersion versionMax
+    out <<< {-T.pack $ -}  Ver.showVersion a.versionMax
 
 instance IsValue Recur where
   printValue (Recur a) = do
     out "FREQ="
-    printShowUpper recurFreq
-    for_ recurUntilCount $ \x ->
+    printShowUpper a.recurFreq
+    for_ a.recurUntilCount $ \x ->
       case x of
         Left y -> out ";UNTIL=" *> printValue y
         Right y -> out ";COUNT=" *> printShow y
-    when (recurInterval /= 1) $
-      out ";INTERVAL=" *> printShow recurInterval
-    unless (null recurBySecond) $
-      out ";BYSECOND=" *> printShowN recurBySecond
-    unless (null recurByMinute) $
-      out ";BYMINUTE=" *> printShowN recurByMinute
-    unless (null recurByHour) $
-      out ";BYHOUR=" *> printShowN recurByHour
-    unless (null recurByDay) $
-      out ";BYDAY=" *> printN printNWeekday recurByDay
-    unless (null recurByMonthDay) $
-      out ";BYMONTHDAY=" *> printShowN recurByMonthDay
-    unless (null recurByYearDay) $
-      out ";BYYEARDAY=" *> printShowN recurByYearDay
-    unless (null recurByWeekNo) $
-      out ";BYWEEKNO=" *> printShowN recurByWeekNo
-    unless (null recurByMonth) $
-      out ";BYMONTH=" *> printShowN recurByMonth
-    unless (null recurBySetPos) $
-      out ";BYSETPOS=" *> printShowN recurBySetPos
-    unless (recurWkSt == Monday) $
-      out ";WKST=" *> printValue recurWkSt
+    when (a.recurInterval /= 1) $
+      out ";INTERVAL=" *> printShow a.recurInterval
+    unless (Foldable.null a.recurBySecond) $
+      out ";BYSECOND=" *> printShowN a.recurBySecond
+    unless (Foldable.null a.recurByMinute) $
+      out ";BYMINUTE=" *> printShowN a.recurByMinute
+    unless (Foldable.null a.recurByHour) $
+      out ";BYHOUR=" *> printShowN a.recurByHour
+    unless (Foldable.null a.recurByDay) $
+      out ";BYDAY=" *> printN printNWeekday a.recurByDay
+    unless (Foldable.null a.recurByMonthDay) $
+      out ";BYMONTHDAY=" *> printShowN a.recurByMonthDay
+    unless (Foldable.null a.recurByYearDay) $
+      out ";BYYEARDAY=" *> printShowN a.recurByYearDay
+    unless (Foldable.null a.recurByWeekNo) $
+      out ";BYWEEKNO=" *> printShowN a.recurByWeekNo
+    unless (Foldable.null a.recurByMonth) $
+      out ";BYMONTH=" *> printShowN a.recurByMonth
+    unless (Foldable.null a.recurBySetPos) $
+      out ";BYSETPOS=" *> printShowN a.recurBySetPos
+    unless (a.recurWkSt == Monday) $
+      out ";WKST=" *> printValue a.recurWkSt
 
 instance IsValue TimeTransparency where
   printValue Opaque {} = out "OPAQUE"
   printValue Transparent {} = out "TRANSPARENT"
 
 instance IsValue DTEnd where
-  printValue (DTEndDateTime a) = printValue dtEndDateTimeValue
-  printValue (DTEndDate a) = printValue dtEndDateValue
+  printValue (DTEndDateTime a) = printValue a.dtEndDateTimeValue
+  printValue (DTEndDate a) = printValue a.dtEndDateValue
 
 instance IsValue Due where
-  printValue (DueDateTime a) = printValue dueDateTimeValue
-  printValue (DueDate a) = printValue dueDateValue
+  printValue (DueDateTime a) = printValue a.dueDateTimeValue
+  printValue (DueDate a) = printValue a.dueDateValue
 
 instance IsValue EventStatus where
-  printValue TentativeEvent {} = out "TENTATIVE"
-  printValue ConfirmedEvent {} = out "CONFIRMED"
-  printValue CancelledEvent {} = out "CANCELLED"
+  printValue (TentativeEvent _) = out "TENTATIVE"
+  printValue (ConfirmedEvent _) = out "CONFIRMED"
+  printValue (CancelledEvent _) = out "CANCELLED"
 
 instance IsValue TodoStatus where
-  printValue TodoNeedsAction {} = out "NEEDS-ACTION"
-  printValue CompletedTodo {} = out "COMPLETED"
-  printValue InProcessTodo {} = out "IN-PROCESS"
-  printValue CancelledTodo {} = out "CANCELLED"
+  printValue (TodoNeedsAction _) = out "NEEDS-ACTION"
+  printValue (CompletedTodo _) = out "COMPLETED"
+  printValue (InProcessTodo _) = out "IN-PROCESS"
+  printValue (CancelledTodo _) = out "CANCELLED"
 
 instance IsValue JournalStatus where
-  printValue DraftJournal {} = out "DRAFT"
-  printValue FinalJournal {} = out "FINAL"
-  printValue CancelledJournal {} = out "CANCELLED"
+  printValue (DraftJournal _) = out "DRAFT"
+  printValue (FinalJournal _) = out "FINAL"
+  printValue (CancelledJournal _) = out "CANCELLED"
 
 instance IsValue ClassValue where
   printValue (ClassValueX x) = out $ CI.original x
@@ -905,14 +913,14 @@ instance IsValue Weekday where
   printValue Saturday = out "SA"
 
 instance IsValue Date where
-  printValue (Date a) = out <<< {-T.pack $ -}  formatTime "%C%y%m%d" dateValue
+  printValue (Date a) = out <<< {-T.pack $ -}  formatTime "%C%y%m%d" a.dateValue
 
 instance IsValue DateTime where
   printValue (FloatingDateTime a) =
-    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" dateTimeFloating
-  printValue (UTCDateTime a) = printUTCTime dateTimeUTC
+    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" a.dateTimeFloating
+  printValue (UTCDateTime a) = printUTCTime a.dateTimeUTC
   printValue (ZonedDateTime a) =
-    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" dateTimeFloating
+    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" a.dateTimeFloating
 
 instance IsValue (Either Date DateTime) where
   printValue (Left x) = printValue x
@@ -922,35 +930,35 @@ instance IsValue DTStamp where
   printValue (DTStamp a) = printUTCTime dtStampValue
 
 instance IsValue DTStart where
-  printValue (DTStartDateTime a) = printValue dtStartDateTimeValue
-  printValue (DTStartDate a) = printValue dtStartDateValue
+  printValue (DTStartDateTime a) = printValue a.dtStartDateTimeValue
+  printValue (DTStartDate a) = printValue a.dtStartDateValue
 
 instance IsValue URI.URI where
   printValue = printShow
 
 instance IsValue Duration where
   printValue (DurationDate a) = do
-    when (durSign == Negative) $ putc '-'
+    when (a.durSign == Negative) $ putc '-'
     putc 'P'
-    printShow durDay *> putc 'D'
+    printShow a.durDay *> putc 'D'
     putc 'T'
-    printShow durHour *> putc 'H'
-    printShow durMinute *> putc 'M'
-    printShow durSecond *> putc 'S'
+    printShow a.durHour *> putc 'H'
+    printShow a.durMinute *> putc 'M'
+    printShow a.durSecond *> putc 'S'
   printValue (DurationTime a) = do
-    when (durSign == Negative) $ putc '-'
+    when (a.durSign == Negative) $ putc '-'
     out "PT"
-    printShow durHour *> putc 'H'
-    printShow durMinute *> putc 'M'
-    printShow durSecond *> putc 'S'
+    printShow a.durHour *> putc 'H'
+    printShow a.durMinute *> putc 'M'
+    printShow a.durSecond *> putc 'S'
   printValue (DurationWeek a) = do
-    when (durSign == Negative) $ putc '-'
+    when (a.durSign == Negative) $ putc '-'
     out "P"
-    printShow durWeek *> putc 'W'
+    printShow a.durWeek *> putc 'W'
 
 instance IsValue RecurrenceId where
-  printValue (RecurrenceIdDate a) = printValue recurrenceIdDate
-  printValue (RecurrenceIdDateTime a) = printValue recurrenceIdDateTime
+  printValue (RecurrenceIdDate a) = printValue a.recurrenceIdDate
+  printValue (RecurrenceIdDateTime a) = printValue a.recurrenceIdDateTime
 
 instance IsValue Period where
   printValue (PeriodDates f t) = printValue f *> putc '/' *> printValue t
@@ -961,16 +969,13 @@ instance IsValue UTCPeriod where
   printValue (UTCPeriodDuration f d) = printUTCTime f *> putc '/' *> printValue d
 
 instance IsValue RDate where
-  printValue (RDateDates a) = printN printValue $ S.fromFoldable rDateDates
-  printValue (RDateDateTimes a) = printN printValue $ S.fromFoldable rDateDateTimes
-  printValue (RDatePeriods a) = printN printValue $ S.fromFoldable rDatePeriods
+  printValue (RDateDates a) = printN printValue $ S.fromFoldable a.rDateDates
+  printValue (RDateDateTimes a) = printN printValue $ S.fromFoldable a.rDateDateTimes
+  printValue (RDatePeriods a) = printN printValue $ S.fromFoldable a.rDatePeriods
 
 instance IsValue Attachment where
-  printValue (UriAttachment a) = printShow attachUri
-  printValue (BinaryAttachment a) = bytestring $ B64.encode attachContent
-
--- }}}
--- {{{ Lib
+  printValue (UriAttachment a) = printShow a.attachUri
+  printValue (BinaryAttachment a) = bytestring $ B64.encode a.attachContent
 
 ln :: ContentPrinter () -> ContentPrinter ()
 ln x = x *> newline
@@ -980,7 +985,7 @@ param (n /\ xs) = putc ';' *> out n *> putc '=' *> paramVals xs
 
 paramVals :: (List (Quoting /\ Text)) -> ContentPrinter ()
 paramVals (x : xs) = paramVal x *> sequence_ $ map (\x' -> putc ',' *> paramVal x') xs
-paramVals _ = pure Unit
+paramVals _ = pure unit
 
 paramVal :: (Quoting /\ Text) -> ContentPrinter ()
 paramVal (NeedQuotes /\ t) = putc '"' *> out t *> putc '"'
@@ -988,8 +993,8 @@ paramVal (NoQuotes /\ t) = out t
 paramVal (_ /\ t) = paramVal (NeedQuotes /\ t)
 
 texts :: (List Text) -> ContentPrinter ()
-texts (x : xs) = text x *> sequence_ $ map (\x -> putc ',' *> text x') xs
-texts _ = pure Unit
+texts (x : xs) = text x *> sequence_ $ map (\x' -> putc ',' *> text x') xs
+texts _ = pure unit
 
 text :: Text -> ContentPrinter ()
 text t = case T.uncons t of
@@ -998,20 +1003,20 @@ text t = case T.uncons t of
   Just (',' /\ r) -> out "\\," *> text r
   Just ('\\' /\ r) -> out "\\\\" *> text r
   Just (c /\ r) -> putc c *> text r
-  Nothing -> pure Unit
+  Nothing -> pure unit
 
 bytestring :: ByteString -> ContentPrinter ()
-bytestring = BS.foldl' (\m c -> m *> putc8 c) (pure Unit)
+bytestring = Foldable.foldl (\m c -> m *> putc8 c) (pure unit)
 
 out :: Text -> ContentPrinter ()
 out t = case T.uncons t of
   Just (c /\ r) -> putc c *> out r
-  Nothing -> pure Unit
+  Nothing -> pure unit
 
 putc :: Char -> ContentPrinter ()
 putc c = do
   x <- get
-  (b /\ clen) <- asks (efChar2Bu &&& efChar2Len)
+  (b /\ clen) <- asks (_.efChar2Bu &&& _.efChar2Len)
   let cl = clen c
   when (x + cl > 75) foldLine
   tell $ b c
@@ -1021,20 +1026,19 @@ putc8 :: Char -> ContentPrinter ()
 putc8 c = do
   x <- get
   when (x >= 75) foldLine
-  tell $ Bu.char8 c
+  tell $ BS.singleton c
   modify ((+) 1)
 
 foldLine :: ContentPrinter ()
-foldLine = tell (Bu.byteString "\r\n ") *> put 1
+foldLine = tell ( {-Bu.byteString-} "\r\n ") *> put 1
 
 newline :: ContentPrinter ()
-newline = tell (Bu.byteString "\r\n") *> put 0
+newline = tell ( {-Bu.byteString-} "\r\n") *> put 0
 
 -- | Output a whole line. Must be less than 75 bytes.
 line :: ByteString -> ContentPrinter ()
-line b = tell (Bu.lazyByteString b) *> newline
+line b = tell ( {-Bu.lazyByteString-} b) *> newline
 
 formatTime :: FormatTime t => String -> t -> String
 formatTime = Time.formatTime defaultTimeLocale
 
--- }}}
