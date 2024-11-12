@@ -8,6 +8,7 @@ package:
     - datetime
     - effect
     - foldable-traversable
+    - formatters
     - lists
     - prelude
     - profunctor

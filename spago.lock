@@ -12,6 +12,7 @@
             "datetime",
             "effect",
             "foldable-traversable",
+            "formatters",
             "lists",
             "prelude",
             "profunctor",
@@ -39,8 +40,10 @@
             "enums",
             "exceptions",
             "exists",
+            "fixed-points",
             "foldable-traversable",
             "foreign-object",
+            "formatters",
             "functions",
             "functors",
             "gen",
@@ -832,6 +835,17 @@
         "unsafe-coerce"
       ]
     },
+    "fixed-points": {
+      "type": "registry",
+      "version": "7.0.0",
+      "integrity": "sha256-hTl5fzeG4mzAOFzEzAeNH7kJvJgYCH7x3v2NdX9pOE4=",
+      "dependencies": [
+        "exists",
+        "newtype",
+        "prelude",
+        "transformers"
+      ]
+    },
     "foldable-traversable": {
       "type": "registry",
       "version": "6.0.0",
@@ -867,6 +881,20 @@
         "tuples",
         "typelevel-prelude",
         "unfoldable"
+      ]
+    },
+    "formatters": {
+      "type": "registry",
+      "version": "7.0.0",
+      "integrity": "sha256-5JaC9d2p0xoqJWjWxlHH19R4iJwFTBr4j7SlYcLgicE=",
+      "dependencies": [
+        "datetime",
+        "fixed-points",
+        "lists",
+        "numbers",
+        "parsing",
+        "prelude",
+        "transformers"
       ]
     },
     "functions": {

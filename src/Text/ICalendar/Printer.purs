@@ -21,14 +21,18 @@ import Text.ICalendar.Types
 
 import Codec.MIME.Type (MIMEType, showMIMEType)
 import Control.Monad.RWS (get, put, tell, RWS, asks, modify, runRWS)
-import Data.Array as List
 import Data.Binary.Base64 as B64
 import Data.CaseInsensitive as CI
+import Data.CaseInsensitive (CI(..))
+import Data.DateTime as DT
 import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Foldable (for_, sequence_, traverse_)
 import Data.Foldable as Foldable
+import Data.Formatter.DateTime (FormatterCommand(..))
+import Data.Formatter.DateTime as DF
 import Data.List (List(..), (:))
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Ord (abs, signum)
 import Data.Profunctor.Strong ((&&&))
@@ -52,7 +56,9 @@ printf fmts = spr fmts Nil
 
 type Builder = String -- TODO
 
-data ByteString = BS -- TODO
+type ByteString = String -- TODO
+
+lsing = List.singleton
 
 -- | Functions for encoding into bytestring builders.
 data EncodingFunctions = EncodingFunctions
@@ -78,12 +84,12 @@ utf8Len c = h
     | o < 0x4000000 = 5
     | otherwise = 6
 
-newtype AltRep = AltRep URI.URI
+newtype AltRep = AltRep UriM
 newtype CN = CN Text
-newtype Dir = Dir URI.URI
-newtype Member = Member (Set URI.URI)
-newtype DelTo = DelTo (Set URI.URI)
-newtype DelFrom = DelFrom (Set URI.URI)
+newtype Dir = Dir UriM
+newtype Member = Member (Set UriM)
+newtype DelTo = DelTo (Set UriM)
+newtype DelFrom = DelFrom (Set UriM)
 newtype RSVP = RSVP Boolean
 newtype SentBy = SentBy CalAddress
 
@@ -106,7 +112,7 @@ type ContentPrinter = RWS EncodingFunctions Builder Int
 
 -- {{{ Component printers
 
-printVCalendar :: VCalendar -> ContentPrinter ()
+printVCalendar :: VCalendar -> ContentPrinter Unit
 printVCalendar (VCalendar a) = do
   line "BEGIN:VCALENDAR"
   ln $ do
@@ -130,7 +136,7 @@ printVCalendar (VCalendar a) = do
   traverse_ printVOther a.vcOtherComps
   line "END:VCALENDAR"
 
-printVTimeZone :: VTimeZone -> ContentPrinter ()
+printVTimeZone :: VTimeZone -> ContentPrinter Unit
 printVTimeZone ( {-VTimeZone-} a) = do
   line "BEGIN:VTIMEZONE"
   ln $ do
@@ -145,7 +151,7 @@ printVTimeZone ( {-VTimeZone-} a) = do
   traverse_ printProperty a.vtzOther
   line "END:VTIMEZONE"
 
-printTZProp :: ByteString -> TZProp -> ContentPrinter ()
+printTZProp :: ByteString -> TZProp -> ContentPrinter Unit
 printTZProp name (TZProp a) = do
   line $ "BEGIN:" <> name
   printProperty a.tzpDTStart
@@ -164,7 +170,7 @@ printTZProp name (TZProp a) = do
   traverse_ printProperty a.tzpOther
   line $ "END:" <> name
 
-printVEvent :: VEvent -> ContentPrinter ()
+printVEvent :: VEvent -> ContentPrinter Unit
 printVEvent ( {-VEvent -} a) = do
   line "BEGIN:VEVENT"
   printProperty a.veDTStamp
@@ -200,7 +206,7 @@ printVEvent ( {-VEvent -} a) = do
   printProperty a.veOther
   line "END:VEVENT"
 
-printVTodo :: VTodo -> ContentPrinter ()
+printVTodo :: VTodo -> ContentPrinter Unit
 printVTodo ( {-VTodo-} a) = do
   line "BEGIN:VTODO"
   printProperty a.vtDTStamp
@@ -237,7 +243,7 @@ printVTodo ( {-VTodo-} a) = do
   printProperty a.vtOther
   line "END:VTODO"
 
-printVJournal :: VJournal -> ContentPrinter ()
+printVJournal :: VJournal -> ContentPrinter Unit
 printVJournal ( {-VJournal-} a) = do
   line "BEGIN:VJOURNAL"
   printProperty a.vjDTStamp
@@ -266,7 +272,7 @@ printVJournal ( {-VJournal-} a) = do
   printProperty a.vjOther
   line "END:VJOURNAL"
 
-printVFreeBusy :: VFreeBusy -> ContentPrinter ()
+printVFreeBusy :: VFreeBusy -> ContentPrinter Unit
 printVFreeBusy ( {-VFreeBusy-} a) = do
   line "BEGIN:VFREEBUSY"
   printProperty a.vfbDTStamp
@@ -283,13 +289,13 @@ printVFreeBusy ( {-VFreeBusy-} a) = do
   printProperty a.vfbOther
   line "END:VFREEBUSY"
 
-printVOther :: VOther -> ContentPrinter ()
+printVOther :: VOther -> ContentPrinter Unit
 printVOther (VOther a) = do
-  ln.out $ "BEGIN:V" <> CI.original a.voName
+  ln out $ "BEGIN:V" <> CI.original a.voName
   traverse_ printProperty a.voProps
-  ln.out $ "END:V" <> CI.original a.voName
+  ln out $ "END:V" <> CI.original a.voName
 
-printVAlarm :: VAlarm -> ContentPrinter ()
+printVAlarm :: VAlarm -> ContentPrinter Unit
 printVAlarm va = do
   line "BEGIN:VALARM"
   prop "ACTION" $ va.vaActionOther
@@ -330,7 +336,7 @@ printVAlarm va = do
 -- {{{ Property printers.
 
 class IsProperty a where
-  printProperty :: a -> ContentPrinter ()
+  printProperty :: a -> ContentPrinter Unit
 
 instance IsProperty a => IsProperty (Set a) where
   printProperty = traverse_ printProperty
@@ -532,7 +538,7 @@ instance IsProperty RequestStatus where
         (x : xs) -> do
           printShow x
           sequence_ $ map (\y -> putc '.' *> printShow y) xs
-        [] -> pure unit
+        Nil -> pure unit
     ) a.requestStatusCode
     putc ';'
     text a.requestStatusDesc
@@ -573,7 +579,7 @@ prop
   :: ToParam a
   => ByteString
   -> a
-  -> ContentPrinter ()
+  -> ContentPrinter Unit
 prop b x = do
   put (BS.length b)
   -- tell (Bu.lazyByteString b) TODO
@@ -584,63 +590,66 @@ prop b x = do
 -- {{{ Parameter "printers".
 
 class ToParam a where
-  toParam :: a -> List (T2 Text (List (T2 Quoting Text)))
+  toParam :: a -> List (Text /\ (List (Quoting /\ Text)))
 
 instance ToParam a => ToParam (Maybe a) where
-  toParam Nothing = []
+  toParam Nothing = Nil
   toParam (Just x) = toParam x
 
 instance ToParam a => ToParam (Set a) where
   toParam s = case S.findMax s of
-    Nothing -> []
-    Just (Tuple x _) -> toParam x
+    Nothing -> Nil
+    Just x -> toParam x
 
 instance ToParam ExDate where
-  toParam (ExDates a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ] <>
+  toParam (ExDates a) = List.fromFoldable [ ("VALUE" /\ lsing ((NoQuotes /\ "DATE"))) ] <>
     toParam a.exDateOther
   toParam (ExDateTimes a) = toParam a.exDateOther <>
-    toParam (fst <$> S.findMax a.exDateTimes)
+    toParam (S.findMax a.exDateTimes)
 
 instance ToParam AltRep where
-  toParam (AltRep x) = [ ("ALTREP" /\ [ (NeedQuotes /\ {-T.pack-}  show x) ]) ]
+  toParam (AltRep x) = List.fromFoldable [ ("ALTREP" /\ List.fromFoldable [ (NeedQuotes /\ {-T.pack-}  show x) ]) ]
 
 instance ToParam SentBy where
-  toParam (SentBy x) = [ ("SENT-BY" /\ [ (NeedQuotes /\ {-T.pack-}  show x) ]) ]
+  toParam (SentBy x) = b
+    where
+    a = (List.fromFoldable [ (NeedQuotes /\ {-T.pack-}  show x) ])
+    b = List.fromFoldable [ ("SENT-BY" /\ a) ]
 
 instance ToParam Dir where
-  toParam (Dir x) = [ ("DIR" /\ [ (NeedQuotes /\ {-T.pack-}  show x) ]) ]
+  toParam (Dir x) = lsing (("DIR" /\ lsing ((NeedQuotes /\ {-T.pack-}  show x))))
 
 instance ToParam DateTime where
-  toParam (ZonedDateTime a) = [ ("TZID" /\ [ (NoQuotes /\ a.dateTimeZone) ]) ]
-  toParam _ = []
+  toParam (ZonedDateTime a) = lsing (("TZID" /\ lsing ((NoQuotes /\ a.dateTimeZone))))
+  toParam _ = Nil
 
 instance ToParam DTEnd where
   toParam (DTEndDateTime a) = toParam a.dtEndOther <>
     toParam a.dtEndDateTimeValue
-  toParam (DTEndDate a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ] <>
+  toParam (DTEndDate a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE")))) <>
     toParam a.dtEndOther
 
 instance ToParam Due where
   toParam (DueDateTime a) = toParam a.dueOther <> toParam a.dueDateTimeValue
-  toParam (DueDate a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ] <>
+  toParam (DueDate a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE")))) <>
     toParam a.dueOther
 
 instance ToParam CN where
-  toParam (CN x) = [ ("CN" /\ [ (Optional /\ x) ]) ]
+  toParam (CN x) = lsing (("CN" /\ lsing ((Optional /\ x))))
 
 instance ToParam DTStart where
   toParam (DTStartDateTime a) = toParam a.dtStartDateTimeValue <>
     toParam a.dtStartOther
-  toParam (DTStartDate a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ] <>
+  toParam (DTStartDate a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE")))) <>
     toParam a.dtStartOther
 
 instance ToParam RDate where
-  toParam (RDateDates a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ] <>
+  toParam (RDateDates a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE")))) <>
     toParam a.rDateOther
-  toParam (RDatePeriods a) = [ ("VALUE" /\ [ (NoQuotes /\ "PERIOD") ]) ]
+  toParam (RDatePeriods a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "PERIOD"))))
     <> toParam a.rDateOther
     <>
-      toParam (fst <$> S.findMax a.rDatePeriods)
+      toParam (S.findMax a.rDatePeriods)
   toParam (RDateDateTimes a) = toParam a.rDateDateTimes <> toParam a.rDateOther
 
 instance ToParam Period where
@@ -651,12 +660,14 @@ instance ToParam DTStamp where
   toParam (DTStamp a) = toParam a.dtStampOther
 
 instance ToParam OtherParams where
-  toParam (OtherParams l) = fromOP <$> List.fromFoldable l
+  toParam (OtherParams l) = Nil -- map fromOP val
     where
-    fromOP (OtherParam x y) = (CI.original x /\ (\v -> Optional /\ v) <$> y)
+    fromOP :: OtherParam -> List _
+    fromOP (OtherParam (CI x) y) = lsing (x.original /\ (map (\v -> Optional /\ v) y))
+    val = List.fromFoldable l
 
 instance ToParam Language where
-  toParam (Language x) = [ ("LANGUAGE" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam (Language x) = lsing (("LANGUAGE" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam TZName where
   toParam (TZName a) = toParam a.tzNameLanguage <> toParam a.tzNameOther
@@ -668,7 +679,7 @@ instance ToParam (Text /\ (List (Quoting /\ Text))) where
   toParam = (\x -> x : Nil)
 
 instance ToParam RecurrenceId where
-  toParam (RecurrenceIdDate a) = [ ("VALUE" /\ [ (NoQuotes /\ "DATE") ]) ]
+  toParam (RecurrenceIdDate a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE"))))
     <> toParam a.recurrenceIdRange
     <>
       toParam a.recurrenceIdOther
@@ -678,96 +689,101 @@ instance ToParam RecurrenceId where
       toParam a.recurrenceIdOther
 
 instance ToParam Range where
-  toParam ThisAndFuture = [ ("RANGE" /\ [ (NoQuotes /\ "THISANDFUTURE") ]) ]
-  toParam _ = [] -- ThisAndPrior MUST NOT be generated.
+  toParam ThisAndFuture = lsing (("RANGE" /\ lsing ((NoQuotes /\ "THISANDFUTURE"))))
+  toParam _ = Nil -- ThisAndPrior MUST NOT be generated.
 
 instance ToParam FBType where
-  toParam x | x == def = []
-  toParam Free = [ ("FBTYPE" /\ [ (NoQuotes /\ "FREE") ]) ]
-  toParam Busy = [ ("FBTYPE" /\ [ (NoQuotes /\ "BUSY") ]) ]
-  toParam BusyUnavailable = [ ("FBTYPE" /\ [ (NoQuotes /\ "BUSY-UNAVAILABLE") ]) ]
-  toParam BusyTentative = [ ("FBTYPE" /\ [ (NoQuotes /\ "BUSY-TENTATIVE") ]) ]
-  toParam (FBTypeX x) = [ ("FBTYPE" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam x | x == def = Nil
+  toParam Free = lsing (("FBTYPE" /\ lsing ((NoQuotes /\ "FREE"))))
+  toParam Busy = lsing (("FBTYPE" /\ lsing ((NoQuotes /\ "BUSY"))))
+  toParam BusyUnavailable = lsing (("FBTYPE" /\ lsing ((NoQuotes /\ "BUSY-UNAVAILABLE"))))
+  toParam BusyTentative = lsing (("FBTYPE" /\ lsing ((NoQuotes /\ "BUSY-TENTATIVE"))))
+  toParam (FBTypeX x) = lsing (("FBTYPE" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam MIMEType where
-  toParam m = [ ("FMTTYPE" /\ [ (NoQuotes /\ {-T.fromStrict $-}  showMIMEType m) ]) ]
+  toParam m = lsing (("FMTTYPE" /\ lsing ((NoQuotes /\ {-T.fromStrict $-}  showMIMEType m))))
 
 instance ToParam Attachment where
   toParam (UriAttachment a) = toParam a.attachFmtType <>
     toParam a.attachOther
   toParam (BinaryAttachment a) = toParam a.attachFmtType
-    <> toParam.attachOther
+    <> toParam a.attachOther
     <>
-      [ ("VALUE" /\ [ (NoQuotes /\ "BINARY") ])
-      , ("ENCODING" /\ [ (NoQuotes /\ "BASE64") ])
-      ]
+      List.fromFoldable
+        [ ("VALUE" /\ lsing ((NoQuotes /\ "BINARY")))
+        , ("ENCODING" /\ lsing ((NoQuotes /\ "BASE64")))
+        ]
 
 instance ToParam CUType where
-  toParam x | x == def = []
-  toParam Individual = [ ("CUTYPE" /\ [ (NoQuotes /\ "INDIVIDUAL") ]) ]
-  toParam Group = [ ("CUTYPE" /\ [ (NoQuotes /\ "GROUP") ]) ]
-  toParam Resource = [ ("CUTYPE" /\ [ (NoQuotes /\ "RESOURCE") ]) ]
-  toParam Room = [ ("CUTYPE" /\ [ (NoQuotes /\ "ROOM") ]) ]
-  toParam Unknown = [ ("CUTYPE" /\ [ (NoQuotes /\ "UNKNOWN") ]) ]
-  toParam (CUTypeX x) = [ ("CUTYPE" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam x | x == def = Nil
+  toParam Individual = lsing (("CUTYPE" /\ lsing ((NoQuotes /\ "INDIVIDUAL"))))
+  toParam Group = lsing (("CUTYPE" /\ lsing ((NoQuotes /\ "GROUP"))))
+  toParam Resource = lsing (("CUTYPE" /\ lsing ((NoQuotes /\ "RESOURCE"))))
+  toParam Room = lsing (("CUTYPE" /\ lsing ((NoQuotes /\ "ROOM"))))
+  toParam Unknown = lsing (("CUTYPE" /\ lsing ((NoQuotes /\ "UNKNOWN"))))
+  toParam (CUTypeX x) = lsing (("CUTYPE" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam Member where
-  toParam (Member x) | S.isEmpty x = []
+  toParam (Member x) | S.isEmpty x = Nil
   toParam (Member x) =
-    [ ( "MEMBER"
-          /\ (\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show <$> S.fromFoldable x
+    lsing
+      ( ( "MEMBER"
+            /\ ((\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show <$> List.fromFoldable x)
+        )
       )
-    ]
 
 instance ToParam Role where
-  toParam x | x == def = []
-  toParam Chair = [ ("ROLE" /\ [ (NoQuotes /\ "CHAIR") ]) ]
-  toParam ReqParticipant = [ ("ROLE" /\ [ (NoQuotes /\ "REQ-PARTICIPANT") ]) ]
-  toParam OptParticipant = [ ("ROLE" /\ [ (NoQuotes /\ "OPT-PARTICIPANT") ]) ]
-  toParam NonParticipant = [ ("ROLE" /\ [ (NoQuotes /\ "NON-PARTICIPANT") ]) ]
-  toParam (RoleX x) = [ ("ROLE" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam x | x == def = Nil
+  toParam Chair = lsing (("ROLE" /\ lsing ((NoQuotes /\ "CHAIR"))))
+  toParam ReqParticipant = lsing (("ROLE" /\ lsing ((NoQuotes /\ "REQ-PARTICIPANT"))))
+  toParam OptParticipant = lsing (("ROLE" /\ lsing ((NoQuotes /\ "OPT-PARTICIPANT"))))
+  toParam NonParticipant = lsing (("ROLE" /\ lsing ((NoQuotes /\ "NON-PARTICIPANT"))))
+  toParam (RoleX x) = lsing (("ROLE" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam PartStat where
-  toParam x | x == def = []
-  toParam PartStatNeedsAction = [ ("PARTSTAT" /\ [ (NoQuotes /\ "NEEDS-ACTION") ]) ]
-  toParam Accepted = [ ("PARTSTAT" /\ [ (NoQuotes /\ "ACCEPTED") ]) ]
-  toParam Declined = [ ("PARTSTAT" /\ [ (NoQuotes /\ "DECLINED") ]) ]
-  toParam Tentative = [ ("PARTSTAT" /\ [ (NoQuotes /\ "TENTATIVE") ]) ]
-  toParam Delegated = [ ("PARTSTAT" /\ [ (NoQuotes /\ "DELEGATED") ]) ]
-  toParam PartStatCompleted = [ ("PARTSTAT" /\ [ (NoQuotes /\ "COMPLETED") ]) ]
-  toParam InProcess = [ ("PARTSTAT" /\ [ (NoQuotes /\ "IN-PROCESS") ]) ]
-  toParam (PartStatX x) = [ ("PARTSTAT" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam x | x == def = Nil
+  toParam PartStatNeedsAction = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "NEEDS-ACTION"))))
+  toParam Accepted = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "ACCEPTED"))))
+  toParam Declined = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "DECLINED"))))
+  toParam Tentative = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "TENTATIVE"))))
+  toParam Delegated = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "DELEGATED"))))
+  toParam PartStatCompleted = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "COMPLETED"))))
+  toParam InProcess = lsing (("PARTSTAT" /\ lsing ((NoQuotes /\ "IN-PROCESS"))))
+  toParam (PartStatX x) = lsing (("PARTSTAT" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam RelationshipType where
-  toParam x | x == def = []
-  toParam Parent = [ ("RELTYPE" /\ [ (NoQuotes /\ "PARENT") ]) ]
-  toParam Child = [ ("RELTYPE" /\ [ (NoQuotes /\ "CHILD") ]) ]
-  toParam Sibling = [ ("RELTYPE" /\ [ (NoQuotes /\ "SIBLING") ]) ]
-  toParam (RelationshipTypeX x) = [ ("RELTYPE" /\ [ (Optional /\ CI.original x) ]) ]
+  toParam x | x == def = Nil
+  toParam Parent = lsing (("RELTYPE" /\ lsing ((NoQuotes /\ "PARENT"))))
+  toParam Child = lsing (("RELTYPE" /\ lsing ((NoQuotes /\ "CHILD"))))
+  toParam Sibling = lsing (("RELTYPE" /\ lsing ((NoQuotes /\ "SIBLING"))))
+  toParam (RelationshipTypeX x) = lsing (("RELTYPE" /\ lsing ((Optional /\ CI.original x))))
 
 instance ToParam RSVP where
-  toParam (RSVP false) = []
-  toParam (RSVP true) = [ ("RSVP" /\ [ (NoQuotes /\ "TRUE") ]) ]
+  toParam (RSVP false) = Nil
+  toParam (RSVP true) = lsing (("RSVP" /\ lsing ((NoQuotes /\ "TRUE"))))
 
 instance ToParam DelTo where
   toParam (DelTo x)
-    | S.isEmpty = []
+    | S.isEmpty x = Nil
     | otherwise =
-        [ ( "DELEGATED-TO"
-              /\ (\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show
-              <$> S.fromFoldable x
+        lsing
+          ( ( "DELEGATED-TO"
+                /\ ((\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show <$> List.fromFoldable x)
+            )
           )
-        ]
 
 instance ToParam DelFrom where
   toParam (DelFrom x)
-    | S.isEmpty x = []
+    | S.isEmpty x = Nil
     | otherwise =
-        [ ( "DELEGATED-FROM"
-              /\ (\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show
-              <$> S.fromFoldable x
+        lsing
+          ( ( "DELEGATED-FROM"
+                /\
+                  ( (\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show
+                      <$> List.fromFoldable x
+                  )
+            )
           )
-        ]
 
 instance ToParam Attendee where
   toParam (Attendee a) = toParam a.attendeeCUType
@@ -785,20 +801,20 @@ instance ToParam Attendee where
       toParam a.attendeeOther
 
 instance ToParam AlarmTriggerRelationship where
-  toParam x | x == def = []
-  toParam Start = [ ("RELATED" /\ [ (NoQuotes /\ "START") ]) ]
-  toParam End = [ ("RELATED" /\ [ (NoQuotes /\ "END") ]) ]
+  toParam x | x == def = Nil
+  toParam Start = lsing (("RELATED" /\ lsing ((NoQuotes /\ "START"))))
+  toParam End = lsing (("RELATED" /\ lsing ((NoQuotes /\ "END"))))
 
 instance ToParam Trigger where
   toParam (TriggerDuration a) = toParam a.triggerOther <>
     toParam a.triggerRelated
   toParam (TriggerDateTime a) = toParam a.triggerOther <>
-    [ ("VALUE" /\ [ (NoQuotes /\ "DATE-TIME") ]) ]
+    lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE-TIME"))))
 
 -- }}}
 -- {{{ Value printers
 
-printUTCOffset :: Int -> ContentPrinter ()
+printUTCOffset :: Int -> ContentPrinter Unit
 printUTCOffset n = do
   case signum n of
     -1 -> putc '-'
@@ -810,28 +826,28 @@ printUTCOffset n = do
   (m' /\ s) = abs n `divMod` 60
   (t /\ m) = m' `divMod` 60
 
-printNWeekday :: Either (Int /\ Weekday) Weekday -> ContentPrinter ()
+printNWeekday :: Either (Int /\ Weekday) Weekday -> ContentPrinter Unit
 printNWeekday (Left (n /\ w)) = printShow n *> printValue w
 printNWeekday (Right x) = printValue x
 
-printShow :: Show a => a -> ContentPrinter ()
+printShow :: Show a => a -> ContentPrinter Unit
 printShow = out <<< {-T.pack <<< -}  show
 
-printShowN :: Show a => (List a) -> ContentPrinter ()
+printShowN :: Show a => (List a) -> ContentPrinter Unit
 printShowN = printN printShow
 
-printN :: (a -> ContentPrinter ()) -> (List a) -> ContentPrinter ()
+printN :: (a -> ContentPrinter Unit)
 printN m (x : xs) = m x *> sequence_ $ map (\x' -> putc ',' *> m x') xs
 printN _ _ = pure unit
 
-printShowUpper :: Show a => a -> ContentPrinter ()
+printShowUpper :: Show a => a -> ContentPrinter Unit
 printShowUpper = out <<< {-T.pack <<< map -} toUpper <<< show
 
--- printUTCTime :: Time.UTCTime -> ContentPrinter ()
+-- printUTCTime :: Time.UTCTime -> ContentPrinter Unit
 -- printUTCTime = out <<< {-T.pack <<< -}  formatTime "%C%y%m%dT%H%M%SZ"
 
 class IsValue a where
-  printValue :: a -> ContentPrinter ()
+  printValue :: a -> ContentPrinter Unit
 
 instance IsValue ICalVersion where
   printValue (MaxICalVersion a) = out <<< {-T.pack $ -}  Ver.showVersion a.versionMax
@@ -927,13 +943,13 @@ instance IsValue (Either Date DateTime) where
   printValue (Right x) = printValue x
 
 instance IsValue DTStamp where
-  printValue (DTStamp a) = printUTCTime dtStampValue
+  printValue (DTStamp a) = printUTCTime a.dtStampValue
 
 instance IsValue DTStart where
   printValue (DTStartDateTime a) = printValue a.dtStartDateTimeValue
   printValue (DTStartDate a) = printValue a.dtStartDateValue
 
-instance IsValue URI.URI where
+instance IsValue UriM where
   printValue = printShow
 
 instance IsValue Duration where
@@ -977,26 +993,26 @@ instance IsValue Attachment where
   printValue (UriAttachment a) = printShow a.attachUri
   printValue (BinaryAttachment a) = bytestring $ B64.encode a.attachContent
 
-ln :: ContentPrinter () -> ContentPrinter ()
+ln :: ContentPrinter Unit -> ContentPrinter Unit
 ln x = x *> newline
 
-param :: (Text /\ (List (Quoting /\ Text))) -> ContentPrinter ()
+param :: (Text /\ (List (Quoting /\ Text))) -> ContentPrinter Unit
 param (n /\ xs) = putc ';' *> out n *> putc '=' *> paramVals xs
 
-paramVals :: (List (Quoting /\ Text)) -> ContentPrinter ()
+paramVals :: (List (Quoting /\ Text)) -> ContentPrinter Unit
 paramVals (x : xs) = paramVal x *> sequence_ $ map (\x' -> putc ',' *> paramVal x') xs
 paramVals _ = pure unit
 
-paramVal :: (Quoting /\ Text) -> ContentPrinter ()
+paramVal :: (Quoting /\ Text) -> ContentPrinter Unit
 paramVal (NeedQuotes /\ t) = putc '"' *> out t *> putc '"'
 paramVal (NoQuotes /\ t) = out t
 paramVal (_ /\ t) = paramVal (NeedQuotes /\ t)
 
-texts :: (List Text) -> ContentPrinter ()
+texts :: (List Text) -> ContentPrinter Unit
 texts (x : xs) = text x *> sequence_ $ map (\x' -> putc ',' *> text x') xs
 texts _ = pure unit
 
-text :: Text -> ContentPrinter ()
+text :: Text -> ContentPrinter Unit
 text t = case T.uncons t of
   Just (';' /\ r) -> out "\\;" *> text r
   Just ('\n' /\ r) -> out "\\n" *> text r
@@ -1005,15 +1021,15 @@ text t = case T.uncons t of
   Just (c /\ r) -> putc c *> text r
   Nothing -> pure unit
 
-bytestring :: ByteString -> ContentPrinter ()
+bytestring :: ByteString -> ContentPrinter Unit
 bytestring = Foldable.foldl (\m c -> m *> putc8 c) (pure unit)
 
-out :: Text -> ContentPrinter ()
+out :: Text -> ContentPrinter Unit
 out t = case T.uncons t of
   Just (c /\ r) -> putc c *> out r
   Nothing -> pure unit
 
-putc :: Char -> ContentPrinter ()
+putc :: Char -> ContentPrinter Unit
 putc c = do
   x <- get
   (b /\ clen) <- asks (_.efChar2Bu &&& _.efChar2Len)
@@ -1022,23 +1038,29 @@ putc c = do
   tell $ b c
   modify ((+) cl)
 
-putc8 :: Char -> ContentPrinter ()
+putc8 :: Char -> ContentPrinter Unit
 putc8 c = do
   x <- get
   when (x >= 75) foldLine
   tell $ BS.singleton c
   modify ((+) 1)
 
-foldLine :: ContentPrinter ()
+foldLine :: ContentPrinter Unit
 foldLine = tell ( {-Bu.byteString-} "\r\n ") *> put 1
 
-newline :: ContentPrinter ()
+newline :: ContentPrinter Unit
 newline = tell ( {-Bu.byteString-} "\r\n") *> put 0
 
 -- | Output a whole line. Must be less than 75 bytes.
-line :: ByteString -> ContentPrinter ()
+line :: ByteString -> ContentPrinter Unit
 line b = tell ( {-Bu.lazyByteString-} b) *> newline
 
-formatTime :: FormatTime t => String -> t -> String
-formatTime = Time.formatTime defaultTimeLocale
+formatTime :: List FormatterCommand -> DT.DateTime -> String
+formatTime = DF.format
+
+printUTCTime :: DT.DateTime -> String
+printUTCTime = formatTime (List.fromFoldable [ YearFull, MonthTwoDigits, DayOfMonthTwoDigits ])
+
+-- formatTime :: FormatTime t => String -> t -> String
+-- formatTime = Time.formatTime defaultTimeLocale
 

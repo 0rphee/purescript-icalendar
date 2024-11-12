@@ -1,5 +1,5 @@
 module Data.CaseInsensitive
-  ( CI
+  ( CI(..)
   , foldedCase
   , map
   , mk

@@ -54,8 +54,6 @@ showVersion (Version { versionBranch, versionTags }) =
   ((List.intercalate "." (map show versionBranch)))
     <> (Foldable.fold (map (\x -> "-" <> x) versionTags))
 
--- type URI = Url
-
 type Integer =
   Int
 
@@ -77,23 +75,25 @@ type LocalTime =
 
 data Language = Language CI
 
+derive instance Eq Language
+derive instance Ord Language
+
 -- TODO: RFC5646 types and parser.
 -- deriving
--- ( Eq, Show, Ord, Typeable )
 
-type URI = URI.URI UserInfo (HostPortPair Host Port) Path HierPath Query Fragment
-type CalAddress = URI
+type UriM = URI.URI UserInfo (HostPortPair Host Port) Path HierPath Query Fragment
+type CalAddress = UriM
 
 -- | One other parameter, either x-param or iana-param.
 
-data OtherParam = OtherParam CI (List Text) --deriving ( Show, Eq, Ord, Typeable )
+data OtherParam = OtherParam CI (List Text)
 
 derive instance Eq OtherParam
 derive instance Ord OtherParam
 
 -- | Other parameters, either x-param or other iana-param.
 
-data OtherParams = OtherParams (Set OtherParam) --deriving ( Show, Eq, Ord, Typeable )
+data OtherParams = OtherParams (Set OtherParam)
 
 derive instance Eq OtherParams
 derive instance Ord OtherParams
@@ -504,12 +504,12 @@ derive instance Ord VOther
 
 data Attachment
   = UriAttachment
-      { attachFmtdata :: Maybe MIMEType
-      , attachUri :: URI
+      { attachFmtType :: Maybe MIMEType
+      , attachUri :: UriM
       , attachOther :: OtherParams
       }
   | BinaryAttachment
-      { attachFmtdata :: Maybe MIMEType
+      { attachFmtType :: Maybe MIMEType
       , attachContent :: Uint8Array
       , attachOther :: OtherParams
       }
@@ -562,7 +562,7 @@ data Completed = Completed
 
 data Comment = Comment
   { commentValue :: Text
-  , commentAltRep :: Maybe URI
+  , commentAltRep :: Maybe UriM
   , commentLanguage :: Maybe Language
   , commentOther :: OtherParams
   }
@@ -572,7 +572,7 @@ data Comment = Comment
 
 data Description = Description
   { descriptionValue :: Text
-  , descriptionAltRep :: Maybe URI
+  , descriptionAltRep :: Maybe UriM
   , descriptionLanguage :: Maybe Language
   , descriptionOther :: OtherParams
   }
@@ -591,7 +591,7 @@ data Geo = Geo
 
 data Location = Location
   { locationValue :: Text
-  , locationAltRep :: Maybe URI
+  , locationAltRep :: Maybe UriM
   , locationLanguage :: Maybe Language
   , locationOther :: OtherParams
   }
@@ -623,7 +623,7 @@ defPriority =
 
 data Resources = Resources
   { resourcesValue :: Set Text
-  , resourcesAltRep :: Maybe URI
+  , resourcesAltRep :: Maybe UriM
   , resourcesLanguage :: Maybe Language
   , resourcesOther :: OtherParams
   }
@@ -655,7 +655,7 @@ data JournalStatus
 
 data Summary = Summary
   { summaryValue :: Text
-  , summaryAltRep :: Maybe URI
+  , summaryAltRep :: Maybe UriM
   , summaryLanguage :: Maybe Language
   , summaryOther :: OtherParams
   }
@@ -757,12 +757,16 @@ data Duration
       , durWeek :: Int
       }
 
--- deriving ( Show, Eq, Ord, dataable )
--- | Sign.
+derive instance Eq Duration
+derive instance Ord Duration
 
+-- | Sign.
 data Sign
   = Positive
-  | Negative -- deriving ( Show, Eq, Ord, dataable )
+  | Negative
+
+derive instance Eq Sign
+derive instance Ord Sign
 
 instance Default Sign where
   def = Positive
@@ -774,7 +778,8 @@ data DurationProp = DurationProp
   , durationOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq DurationProp
+derive instance Ord DurationProp
 
 data FreeBusy = FreeBusy
   { freeBusydata :: FBType
@@ -782,29 +787,38 @@ data FreeBusy = FreeBusy
   , freeBusyOther :: OtherParams
   }
 
+derive instance Eq FreeBusy
+derive instance Ord FreeBusy
+
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Period of time. 3.3.9.
-
 data Period
   = PeriodDates DateTime DateTime
-  | PeriodDuration DateTime Duration -- deriving ( Show, Eq, Ord, dataable )
+  | PeriodDuration DateTime Duration
+
+derive instance Eq Period
+derive instance Ord Period
 
 -- | Period of time which must be UTC, as in FreeBusy. 3.3.9.
-
 data UTCPeriod
   = UTCPeriodDates UTCTime UTCTime
-  | UTCPeriodDuration UTCTime Duration -- deriving ( Show, Eq, Ord, dataable )
+  | UTCPeriodDuration UTCTime Duration
+
+derive instance Eq UTCPeriod
+derive instance Ord UTCPeriod
 
 -- | Free/Busy Time data. 3.2.9.
 --
 -- Unrecognized FBTypeX MUST be treated as Busy.
-
 data FBType
   = Free
   | Busy
   | BusyUnavailable
   | BusyTentative
-  | FBTypeX CI -- deriving ( Show, Eq, Ord, dataable )
+  | FBTypeX CI
+
+derive instance Eq FBType
+derive instance Ord FBType
 
 instance Default FBType where
   def = Busy
@@ -850,7 +864,7 @@ data UTCOffset = UTCOffset
 -- | Time Zone URL. 3.8.3.5.
 
 data TZUrl = TZUrl
-  { tzUrlValue :: URI
+  { tzUrlValue :: UriM
   , tzUrlOther :: OtherParams
   }
 
@@ -868,35 +882,38 @@ data Attendee = Attendee
   , attendeeDelFrom :: Set CalAddress
   , attendeeSentBy :: Maybe CalAddress
   , attendeeCN :: Maybe Text
-  , attendeeDir :: Maybe URI
+  , attendeeDir :: Maybe UriM
   , attendeeLanguage :: Maybe Language
   , attendeeOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
 -- | Calendar User data. 3.2.3.
 --
 -- Unrecognized CUTypeX MUST be treated as Unknown.
-
 data CUType
   = Individual
   | Group
   | Resource
   | Room
   | Unknown
-  | CUTypeX CI -- deriving ( Show, Eq, Ord, dataable )
+  | CUTypeX CI
+
+derive instance Eq CUType
+derive instance Ord CUType
 
 instance Default CUType where
   def = Individual
 
 -- | Role. 3.2.16.
-
 data Role
   = Chair
   | ReqParticipant
   | OptParticipant
   | NonParticipant
-  | RoleX CI -- deriving ( Show, Eq, Ord, dataable )
+  | RoleX CI
+
+derive instance Eq Role
+derive instance Ord Role
 
 instance Default Role where
   def = ReqParticipant
@@ -912,7 +929,10 @@ data PartStat
   | Delegated
   | PartStatCompleted
   | InProcess
-  | PartStatX CI -- deriving ( Show, Eq, Ord, dataable )
+  | PartStatX CI
+
+derive instance Eq PartStat
+derive instance Ord PartStat
 
 instance Default PartStat where
   def = PartStatNeedsAction
@@ -921,7 +941,7 @@ instance Default PartStat where
 
 data Contact = Contact
   { contactValue :: Text
-  , contactAltRep :: Maybe URI
+  , contactAltRep :: Maybe UriM
   , contactLanguage :: Maybe Language
   , contactOther :: OtherParams
   }
@@ -935,7 +955,7 @@ data Contact = Contact
 data Organizer = Organizer
   { organizerValue :: CalAddress
   , organizerCN :: Maybe Text
-  , organizerDir :: Maybe URI
+  , organizerDir :: Maybe UriM
   , organizerSentBy :: Maybe CalAddress
   , organizerLanguage :: Maybe Language
   , organizerOther :: OtherParams
@@ -957,57 +977,60 @@ data RecurrenceId
       , recurrenceIdOther :: OtherParams
       }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- | Recurrence Identifier Range. 3.2.13
+derive instance Eq RecurrenceId
+derive instance Ord RecurrenceId
 
+-- | Recurrence Identifier Range. 3.2.13
 data Range
   = ThisAndFuture
-  | ThisAndPrior -- deriving ( Show, Eq, Ord, dataable )
+  | ThisAndPrior
 
+derive instance Eq Range
+derive instance Ord Range
 -- | Related To. 3.8.4.5.
-
 data RelatedTo = RelatedTo
   { relatedToValue :: Text
   , relatedTodata :: RelationshipType
   , relatedToOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
+derive instance Eq RelatedTo
+derive instance Ord RelatedTo
+
 -- | Relationship data. 3.2.15.
 --
 -- Unrecognized RelationshipTypeX values MUST be treated as Parent.
-
 data RelationshipType
   = Parent
   | Child
   | Sibling
   | RelationshipTypeX CI -- deriving ( Show, Eq, Ord, dataable )
 
+derive instance Eq RelationshipType
+derive instance Ord RelationshipType
+
 instance Default RelationshipType where
   def = Parent
 
 -- | Uniform Resource Locator. 3.8.4.6.
-
 data URL = URL
-  { urlValue :: URI
+  { urlValue :: UriM
   , urlOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- | Unique Identifier. 3.8.4.7.
+derive instance Eq URL
+derive instance Ord URL
 
+-- | Unique Identifier. 3.8.4.7.
 data UID = UID
   { uidValue :: Text
   , uidOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- | Exception Date-Times. 3.8.5.1.
+derive instance Eq UID
+derive instance Ord UID
 
+-- | Exception Date-Times. 3.8.5.1.
 data ExDate
   = ExDates
       { exDates :: Set Date
@@ -1018,10 +1041,10 @@ data ExDate
       , exDateOther :: OtherParams
       }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- | Recurrence Date-Times. 3.8.5.2.
+derive instance Eq ExDate
+derive instance Ord ExDate
 
+-- | Recurrence Date-Times. 3.8.5.2.
 data RDate
   = RDateDates
       { rDateDates :: Set Date
@@ -1036,9 +1059,10 @@ data RDate
       , rDateOther :: OtherParams
       }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- -- | Frequency in recurrences. 3.3.10.
+derive instance Eq RDate
+derive instance Ord RDate
+
+-- | Frequency in recurrences. 3.3.10.
 
 data Frequency
   = Secondly
@@ -1047,12 +1071,12 @@ data Frequency
   | Daily
   | Weekly
   | Monthly
-  | Yearly -- deriving ( Show, Eq, Ord, dataable )
+  | Yearly
 
 derive instance Eq Frequency
 derive instance Ord Frequency
--- | Weekday, in recurrences. 3.3.10.
 
+-- | Weekday, in recurrences. 3.3.10.
 data Weekday
   = Sunday
   | Monday
@@ -1060,7 +1084,7 @@ data Weekday
   | Wednesday
   | Thursday
   | Friday
-  | Saturday -- deriving ( Show, Eq, Ord, Bounded, Enum, dataable )
+  | Saturday
 
 derive instance Eq Weekday
 derive instance Ord Weekday
@@ -1083,8 +1107,8 @@ data Recur = Recur
   , recurWkSt :: Weekday
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
+derive instance Eq Recur
+derive instance Ord Recur
 -- | Recurrence Rule. 3.8.5.3.
 
 data RRule = RRule
@@ -1092,8 +1116,8 @@ data RRule = RRule
   , rRuleOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
+derive instance Eq RRule
+derive instance Ord RRule
 -- | Repeat count. 3.8.6.2.
 
 data Repeat = Repeat
@@ -1101,9 +1125,8 @@ data Repeat = Repeat
   , repeatOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- instance Default Repeat where
+derive instance Eq Repeat
+derive instance Ord Repeat
 
 defRepeat :: Repeat
 defRepeat =
@@ -1113,7 +1136,10 @@ defRepeat =
 
 data AlarmTriggerRelationship
   = Start
-  | End --deriving ( Show, Eq, Ord, dataable )
+  | End
+
+derive instance Eq AlarmTriggerRelationship
+derive instance Ord AlarmTriggerRelationship
 
 instance Default AlarmTriggerRelationship where
   def = Start
@@ -1131,10 +1157,10 @@ data Trigger
       , triggerOther :: OtherParams
       }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- | Date-Time Created. 3.8.7.1.
+derive instance Eq Trigger
+derive instance Ord Trigger
 
+-- | Date-Time Created. 3.8.7.1.
 data Created = Created
   { createdValue :: UTCTime
   , createdOther :: OtherParams
@@ -1177,16 +1203,11 @@ data Sequence = Sequence
 derive instance Eq Sequence
 derive instance Ord Sequence
 
--- deriving
--- ( Show, Eq, Ord, dataable )
--- instance Default Sequence where
-
-defSequence :: Sequence
-defSequence =
-  Sequence { sequenceValue: 0, sequenceOther: def }
+instance Default Sequence where
+  def :: Sequence
+  def = Sequence { sequenceValue: 0, sequenceOther: def }
 
 -- | Request Status. 3.8.8.3.
-
 data RequestStatus = RequestStatus
   { requestStatusCode :: List Int
   , requestStatusDesc :: Text
@@ -1195,8 +1216,9 @@ data RequestStatus = RequestStatus
   , requestStatusOther :: OtherParams
   }
 
--- deriving
--- ( Show, Eq, Ord, dataable )
+derive instance Eq RequestStatus
+derive instance Ord RequestStatus
+
 -- | Any other property.
 
 data OtherProperty = OtherProperty
@@ -1207,6 +1229,3 @@ data OtherProperty = OtherProperty
 
 derive instance Eq OtherProperty
 derive instance Ord OtherProperty
-
--- deriving
--- ( Show, Eq, Ord, Typeable )
