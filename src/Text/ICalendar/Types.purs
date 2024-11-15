@@ -13,6 +13,7 @@ import Codec.MIME.Type (MIMEType)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.CaseInsensitive (CI)
 import Data.CaseInsensitive as CI
+import Data.DateTime as DT
 import Data.Default (class Default, def)
 import Data.Either (Either)
 import Data.Foldable as Foldable
@@ -28,10 +29,6 @@ import Data.Tuple.Nested (T2)
 import URI (Fragment, HierPath, Host, Path, Port, Query, UserInfo)
 import URI.HostPortPair (HostPortPair)
 import URI.URI as URI
-
--- import Time (Posix)
-
--- import Paths_iCalendar (version)
 
 version :: Version
 version =
@@ -57,19 +54,16 @@ showVersion (Version { versionBranch, versionTags }) =
 type Integer =
   Int
 
-type Day =
-  Weekday
+newtype Day = ModifiedJulianDay
+  { toModifiedJulianDay :: Integer
+  }
 
-data Posix = Posix
+derive instance Eq Day
+derive instance Ord Day
 
-derive instance posixeq :: Eq Posix
-derive instance posixord :: Ord Posix
+type UTCTime = DT.DateTime
 
-type UTCTime =
-  Posix
-
-type LocalTime =
-  Posix
+type LocalTime = DT.DateTime
 
 -- | Language.
 
@@ -120,13 +114,13 @@ data VCalendar =
     , vcTimeZones :: Map Text VTimeZone
 
     -- ^ Map TZID-value VTimeZone
-    , vcEvents :: Map (T2 Text (Maybe (Either Date DateTime))) VEvent
+    , vcEvents :: Map (T2 Text (Maybe (Either Date ICalDateTime))) VEvent
 
     -- ^ Map (UID-value, Maybe RecurrenceID-value) VEvent
-    , vcTodos :: Map (T2 Text (Maybe (Either Date DateTime))) VTodo
+    , vcTodos :: Map (T2 Text (Maybe (Either Date ICalDateTime))) VTodo
 
     -- ^ Map (UID-value, Maybe RecurrenceID-value) VTodo
-    , vcJournals :: Map (T2 Text (Maybe (Either Date DateTime))) VJournal
+    , vcJournals :: Map (T2 Text (Maybe (Either Date ICalDateTime))) VJournal
 
     -- ^ Map (UID-value, Maybe RecurrenceID-value) VJournal
     , vcFreeBusys :: Map Text VFreeBusy
@@ -531,12 +525,12 @@ data Class = Class
   , classOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
--- instance Default Class where
+derive instance Eq Class
+derive instance Ord Class
 
-defClass :: Class
-defClass =
-  Class { classValue: def, classOther: def }
+instance Default Class where
+  def :: Class
+  def = Class { classValue: def, classOther: def }
 
 -- | Classification value. 3.8.1.3.
 -- Unrecognized ClassValueX MUST be treated as Private.
@@ -545,7 +539,17 @@ data ClassValue
   = Public
   | Private
   | Confidential
-  | ClassValueX CI -- deriving ( Show, Eq, Ord, dataable )
+  | ClassValueX CI
+
+derive instance Eq ClassValue
+derive instance Ord ClassValue
+
+instance Show ClassValue where
+  show x = case x of
+    Public -> "Public"
+    Private -> "Private"
+    Confidential -> "Confidential"
+    ClassValueX ci -> "ClassValueX (" <> show ci <> ")"
 
 instance Default ClassValue where
   def = Public
@@ -553,7 +557,7 @@ instance Default ClassValue where
 -- | Date-Time Completed. 3.8.2.1.
 
 data Completed = Completed
-  { completedValue :: DateTime
+  { completedValue :: ICalDateTime
   , completedOther :: OtherParams
   }
 
@@ -577,7 +581,8 @@ data Description = Description
   , descriptionOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq Description
+derive instance Ord Description
 -- | Geographic Position. 3.8.1.6.
 
 data Geo = Geo
@@ -586,7 +591,8 @@ data Geo = Geo
   , geoOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq Geo
+derive instance Ord Geo
 -- | Location. 3.8.1.7.
 
 data Location = Location
@@ -596,7 +602,8 @@ data Location = Location
   , locationOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq Location
+derive instance Ord Location
 -- | Percent complete. 3.8.1.8.
 
 data PercentComplete = PercentComplete
@@ -604,7 +611,8 @@ data PercentComplete = PercentComplete
   , percentCompleteOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq PercentComplete
+derive instance Ord PercentComplete
 -- | Priority. 3.8.1.9.
 
 data Priority = Priority
@@ -612,12 +620,12 @@ data Priority = Priority
   , priorityOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
--- instance Default Priority where
+derive instance Eq Priority
+derive instance Ord Priority
 
-defPriority :: Priority
-defPriority =
-  Priority { priorityValue: 0, priorityOther: def }
+instance Default Priority where
+  def :: Priority
+  def = Priority { priorityValue: 0, priorityOther: def }
 
 -- | Resources. 3.8.1.10.
 
@@ -628,7 +636,8 @@ data Resources = Resources
   , resourcesOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+derive instance Eq Resources
+derive instance Ord Resources
 -- | Status, but only for Events. 3.8.1.11.
 
 data EventStatus
@@ -643,6 +652,13 @@ data TodoStatus
   | CompletedTodo { todoStatusOther :: OtherParams }
   | InProcessTodo { todoStatusOther :: OtherParams }
   | CancelledTodo { todoStatusOther :: OtherParams } -- deriving ( Show, Eq, Ord, dataable )
+
+todoStatusOther :: TodoStatus -> OtherParams
+todoStatusOther x = case x of
+  TodoNeedsAction a -> a.todoStatusOther
+  CompletedTodo a -> a.todoStatusOther
+  InProcessTodo a -> a.todoStatusOther
+  CancelledTodo a -> a.todoStatusOther
 
 -- | Status, but only for Journals. 3.8.1.11.
 
@@ -663,17 +679,16 @@ data Summary = Summary
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Date. 3.3.4
 
-data Date = Date
-  { dateValue :: Day
-  }
+type Date = DT.Date
 
-derive instance Eq Date
-derive instance Ord Date
+-- data Date = Date
+--   { dateValue :: Day
+--   }
 
 -- deriving ( Show, Eq, Ord, dataable )
--- | Date-Time value. 3.3.5.
 
-data DateTime
+-- | Date-Time value. 3.3.5.
+data ICalDateTime
   = FloatingDateTime
       { dateTimeFloating :: LocalTime
       }
@@ -685,15 +700,15 @@ data DateTime
       , dateTimeZone :: Text
       }
 
-derive instance Eq DateTime
-derive instance Ord DateTime
+derive instance Eq ICalDateTime
+derive instance Ord ICalDateTime
 
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Date-Time End. 3.8.2.2.
 
 data DTEnd
   = DTEndDateTime
-      { dtEndDateTimeValue :: DateTime
+      { dtEndDateTimeValue :: ICalDateTime
       , dtEndOther :: OtherParams
       }
   | DTEndDate
@@ -709,7 +724,7 @@ derive instance Ord DTEnd
 
 data Due
   = DueDateTime
-      { dueDateTimeValue :: DateTime
+      { dueDateTimeValue :: ICalDateTime
       , dueOther :: OtherParams
       }
   | DueDate
@@ -726,7 +741,7 @@ derive instance Ord Due
 
 data DTStart
   = DTStartDateTime
-      { dtStartDateTimeValue :: DateTime
+      { dtStartDateTimeValue :: ICalDateTime
       , dtStartOther :: OtherParams
       }
   | DTStartDate
@@ -782,7 +797,7 @@ derive instance Eq DurationProp
 derive instance Ord DurationProp
 
 data FreeBusy = FreeBusy
-  { freeBusydata :: FBType
+  { freeBusyType :: FBType
   , freeBusyPeriods :: Set UTCPeriod
   , freeBusyOther :: OtherParams
   }
@@ -793,8 +808,8 @@ derive instance Ord FreeBusy
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Period of time. 3.3.9.
 data Period
-  = PeriodDates DateTime DateTime
-  | PeriodDuration DateTime Duration
+  = PeriodDates ICalDateTime ICalDateTime
+  | PeriodDuration ICalDateTime Duration
 
 derive instance Eq Period
 derive instance Ord Period
@@ -829,11 +844,12 @@ data TimeTransparency
   = Opaque { timeTransparencyOther :: OtherParams }
   | Transparent { timeTransparencyOther :: OtherParams } -- deriving ( Show, Eq, Ord, dataable )
 
--- instance Default TimeTransparency where
+derive instance Eq TimeTransparency
+derive instance Ord TimeTransparency
 
-defTimeTransparency :: TimeTransparency
-defTimeTransparency =
-  Opaque { timeTransparencyOther: def }
+instance Default TimeTransparency where
+  def :: TimeTransparency
+  def = Opaque { timeTransparencyOther: def }
 
 -- | Time Zone Identifier. 3.8.3.1.
 
@@ -972,7 +988,7 @@ data RecurrenceId
       , recurrenceIdOther :: OtherParams
       }
   | RecurrenceIdDateTime
-      { recurrenceIdDateTime :: DateTime
+      { recurrenceIdDateTime :: ICalDateTime
       , recurrenceIdRange :: Maybe Range
       , recurrenceIdOther :: OtherParams
       }
@@ -1037,7 +1053,7 @@ data ExDate
       , exDateOther :: OtherParams
       }
   | ExDateTimes
-      { exDateTimes :: Set DateTime
+      { exDateTimes :: Set ICalDateTime
       , exDateOther :: OtherParams
       }
 
@@ -1051,7 +1067,7 @@ data RDate
       , rDateOther :: OtherParams
       }
   | RDateDateTimes
-      { rDateDateTimes :: Set DateTime
+      { rDateDateTimes :: Set ICalDateTime
       , rDateOther :: OtherParams
       }
   | RDatePeriods
@@ -1077,23 +1093,13 @@ derive instance Eq Frequency
 derive instance Ord Frequency
 
 -- | Weekday, in recurrences. 3.3.10.
-data Weekday
-  = Sunday
-  | Monday
-  | Tuesday
-  | Wednesday
-  | Thursday
-  | Friday
-  | Saturday
-
-derive instance Eq Weekday
-derive instance Ord Weekday
+type Weekday = DT.Weekday
 
 -- | Recur value. 3.3.10.
 
 data Recur = Recur
   { recurFreq :: Frequency
-  , recurUntilCount :: Maybe (Either (Either Date DateTime) Int)
+  , recurUntilCount :: Maybe (Either (Either Date ICalDateTime) Int)
   , recurInterval :: Int
   , recurBySecond :: List Int
   , recurByMinute :: List Int
@@ -1180,8 +1186,7 @@ data DTStamp = DTStamp
 
 derive instance Eq DTStamp
 derive instance Ord DTStamp
--- deriving
--- ( Show, Eq, Ord, dataable )
+
 -- | Last Modified. 3.8.7.3.
 
 data LastModified = LastModified
@@ -1192,7 +1197,6 @@ data LastModified = LastModified
 derive instance Eq LastModified
 derive instance Ord LastModified
 
--- ( Show, Eq, Ord, Typeable )
 -- | Sequence number. 3.8.7.4.
 
 data Sequence = Sequence

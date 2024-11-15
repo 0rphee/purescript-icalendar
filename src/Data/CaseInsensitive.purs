@@ -15,6 +15,9 @@ import Data.String.Common as String
 
 data CI = CI { original :: String, foldedCase :: String }
 
+instance Show CI where
+  show (CI ci) = show ci.original
+
 instance Eq CI where
   eq (CI a) (CI b) = a.foldedCase == b.foldedCase
 

@@ -22,14 +22,14 @@ import Text.ICalendar.Types
 import Codec.MIME.Type (MIMEType, showMIMEType)
 import Control.Monad.RWS (get, put, tell, RWS, asks, modify, runRWS)
 import Data.Binary.Base64 as B64
-import Data.CaseInsensitive as CI
 import Data.CaseInsensitive (CI(..))
+import Data.CaseInsensitive as CI
 import Data.DateTime as DT
+import Data.DateTime as DateTime
 import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Foldable (for_, sequence_, traverse_)
 import Data.Foldable as Foldable
-import Data.Formatter.DateTime (FormatterCommand(..))
 import Data.Formatter.DateTime as DF
 import Data.List (List(..), (:))
 import Data.List as List
@@ -41,8 +41,12 @@ import Data.Set as S
 import Data.String (toUpper)
 import Data.String as BS
 import Data.String as T
+import Data.String.CodePoints (codePointFromChar, singleton)
+import Data.String.CodePoints as CodePoints
+import Data.String.CodeUnits as CodeUnits
 import Data.Time as Time
 import Data.Unit (Unit(..))
+import Text.ICalendar.Types as Types
 import Text.ICalendar.Types as Ver
 import URI.URI as URI
 
@@ -103,7 +107,7 @@ derive instance Ord Quoting
 --   def = EncodingFunctions Bu.charUtf8
 --     utf8Len
 
-type ContentPrinter = RWS EncodingFunctions Builder Int
+type ContentPrinter a = RWS EncodingFunctions Builder Int a
 
 -- | Print a VCalendar object to a ByteString.
 -- printICalendar :: EncodingFunctions -> VCalendar -> ByteString
@@ -291,9 +295,9 @@ printVFreeBusy ( {-VFreeBusy-} a) = do
 
 printVOther :: VOther -> ContentPrinter Unit
 printVOther (VOther a) = do
-  ln out $ "BEGIN:V" <> CI.original a.voName
+  ln $ out $ "BEGIN:V" <> CI.original a.voName
   traverse_ printProperty a.voProps
-  ln out $ "END:V" <> CI.original a.voName
+  ln $ out $ "END:V" <> CI.original a.voName
 
 printVAlarm :: VAlarm -> ContentPrinter Unit
 printVAlarm va = do
@@ -362,20 +366,17 @@ instance IsProperty PercentComplete where
 instance IsProperty Completed where
   printProperty (Completed a) = ln $ do
     prop "COMPLETED" a.completedOther
-      printValue
-      a.completedValue
+    printValue a.completedValue
 
 instance IsProperty DurationProp where
   printProperty (DurationProp a) = ln $ do
     prop "DURATION" a.durationOther
-      printValue
-      a.durationValue
+    printValue a.durationValue
 
 instance IsProperty Repeat where
   printProperty (Repeat a) = ln $ do
     prop "REPEAT" a.repeatOther
-      printShow
-      a.repeatValue
+    printShow a.repeatValue
 
 instance IsProperty DTEnd where
   printProperty dtend = ln $ prop "DTEND" dtend *> printValue dtend
@@ -414,8 +415,10 @@ instance IsProperty Description where
 
 instance IsProperty Geo where
   printProperty (Geo a) = ln $ do
-    prop "GEO".geoOther
-    out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
+    prop "GEO" a.geoOther
+
+-- TODO
+-- out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
 
 instance IsProperty LastModified where
   printProperty (LastModified a) = ln $ do
@@ -439,33 +442,44 @@ instance IsProperty Organizer where
     printShow a.organizerValue
 
 instance IsProperty Priority where
-  printProperty x
-    | x == def = pure unit
+  printProperty p@(Priority x)
+    | p == def = pure unit
     | otherwise = ln $ do
         prop "PRIORITY" $ x.priorityOther
         printShow $ x.priorityValue
 
 instance IsProperty Sequence where
-  printProperty x
-    | x == def = pure unit
+  printProperty s@(Sequence x)
+    | s == def = pure unit
     | otherwise = ln $ do
         prop "SEQUENCE" $ x.sequenceOther
         printShow $ x.sequenceValue
 
 instance IsProperty EventStatus where
-  printProperty s = ln $ do
-    prop "STATUS" $ s.eventStatusOther
-    printValue s
+  printProperty s = case s of
+    TentativeEvent a -> f a
+    ConfirmedEvent a -> f a
+    CancelledEvent a -> f a
+    where
+    f b = ln $ do
+      prop "STATUS" $ b.eventStatusOther
+      printValue s
 
 instance IsProperty TodoStatus where
   printProperty s = ln $ do
-    prop "STATUS" $ s.todoStatusOther
+    prop "STATUS" $ todoStatusOther s
     printValue s
 
 instance IsProperty JournalStatus where
-  printProperty s = ln $ do
-    prop "STATUS" $ s.journalStatusOther
-    printValue s
+  printProperty s = case s of
+    DraftJournal a -> f a
+    FinalJournal a -> f a
+    CancelledJournal a -> f a
+    where
+    f b =
+      ln $ do
+        prop "STATUS" $ b.journalStatusOther
+        printValue s
 
 instance IsProperty Summary where
   printProperty (Summary a) = ln $ do
@@ -475,11 +489,16 @@ instance IsProperty Summary where
     text a.summaryValue
 
 instance IsProperty TimeTransparency where
-  printProperty x
-    | x == def = pure unit
-    | otherwise = ln $ do
-        prop "TRANSP" $ x.timeTransparencyOther
-        printValue x
+  printProperty t
+    | t == def = pure unit
+    | otherwise =
+        ln $ do
+          prop "TRANSP" $ x.timeTransparencyOther
+          printValue t
+        where
+        x = case t of
+          Opaque a -> a
+          Transparent a -> a
 
 instance IsProperty URL where
   printProperty (URL a) = ln $ prop "URL" a.urlOther *> printShow a.urlValue
@@ -490,8 +509,7 @@ instance IsProperty RecurrenceId where
 instance IsProperty RRule where
   printProperty (RRule a) = ln $ do
     prop "RRULE" a.rRuleOther
-      printValue
-      a.rRuleValue
+    printValue a.rRuleValue
 
 instance IsProperty Attachment where
   printProperty a = ln $ prop "ATTACH" a *> printValue a
@@ -576,7 +594,8 @@ instance IsProperty Trigger where
 
 -- | Print a generic property.
 prop
-  :: ToParam a
+  :: forall a
+   . ToParam a
   => ByteString
   -> a
   -> ContentPrinter Unit
@@ -619,7 +638,7 @@ instance ToParam SentBy where
 instance ToParam Dir where
   toParam (Dir x) = lsing (("DIR" /\ lsing ((NeedQuotes /\ {-T.pack-}  show x))))
 
-instance ToParam DateTime where
+instance ToParam ICalDateTime where
   toParam (ZonedDateTime a) = lsing (("TZID" /\ lsing ((NoQuotes /\ a.dateTimeZone))))
   toParam _ = Nil
 
@@ -826,25 +845,25 @@ printUTCOffset n = do
   (m' /\ s) = abs n `divMod` 60
   (t /\ m) = m' `divMod` 60
 
-printNWeekday :: Either (Int /\ Weekday) Weekday -> ContentPrinter Unit
+printNWeekday :: Either (Int /\ DT.Weekday) DT.Weekday -> ContentPrinter Unit
 printNWeekday (Left (n /\ w)) = printShow n *> printValue w
 printNWeekday (Right x) = printValue x
 
-printShow :: Show a => a -> ContentPrinter Unit
+printShow :: forall a. Show a => a -> ContentPrinter Unit
 printShow = out <<< {-T.pack <<< -}  show
 
-printShowN :: Show a => (List a) -> ContentPrinter Unit
+printShowN :: forall a. Show a => (List a) -> ContentPrinter Unit
 printShowN = printN printShow
 
-printN :: (a -> ContentPrinter Unit)
-printN m (x : xs) = m x *> sequence_ $ map (\x' -> putc ',' *> m x') xs
+printN :: forall a. (a -> ContentPrinter Unit) -> List a -> ContentPrinter Unit
+printN m (x : xs) = m x *> (sequence_ $ map (\x' -> putc ',' *> m x') xs)
 printN _ _ = pure unit
 
-printShowUpper :: Show a => a -> ContentPrinter Unit
+printShowUpper :: forall a. Show a => a -> ContentPrinter Unit
 printShowUpper = out <<< {-T.pack <<< map -} toUpper <<< show
 
--- printUTCTime :: Time.UTCTime -> ContentPrinter Unit
--- printUTCTime = out <<< {-T.pack <<< -}  formatTime "%C%y%m%dT%H%M%SZ"
+printUTCTime :: Types.UTCTime -> ContentPrinter Unit
+printUTCTime t = out $ (formatDateTime t <> "Z")
 
 class IsValue a where
   printValue :: a -> ContentPrinter Unit
@@ -884,12 +903,12 @@ instance IsValue Recur where
       out ";BYMONTH=" *> printShowN a.recurByMonth
     unless (Foldable.null a.recurBySetPos) $
       out ";BYSETPOS=" *> printShowN a.recurBySetPos
-    unless (a.recurWkSt == Monday) $
+    unless (a.recurWkSt == DT.Monday) $
       out ";WKST=" *> printValue a.recurWkSt
 
 instance IsValue TimeTransparency where
-  printValue Opaque {} = out "OPAQUE"
-  printValue Transparent {} = out "TRANSPARENT"
+  printValue (Opaque a) = out "OPAQUE"
+  printValue (Transparent a) = out "TRANSPARENT"
 
 instance IsValue DTEnd where
   printValue (DTEndDateTime a) = printValue a.dtEndDateTimeValue
@@ -919,26 +938,26 @@ instance IsValue ClassValue where
   printValue (ClassValueX x) = out $ CI.original x
   printValue x = printShowUpper x
 
-instance IsValue Weekday where
-  printValue Sunday = out "SU"
-  printValue Monday = out "MO"
-  printValue Tuesday = out "TU"
-  printValue Wednesday = out "WE"
-  printValue Thursday = out "TH"
-  printValue Friday = out "FR"
-  printValue Saturday = out "SA"
+instance IsValue DT.Weekday where
+  printValue DT.Sunday = out "SU"
+  printValue DT.Monday = out "MO"
+  printValue DT.Tuesday = out "TU"
+  printValue DT.Wednesday = out "WE"
+  printValue DT.Thursday = out "TH"
+  printValue DT.Friday = out "FR"
+  printValue DT.Saturday = out "SA"
 
 instance IsValue Date where
-  printValue (Date a) = out <<< {-T.pack $ -}  formatTime "%C%y%m%d" a.dateValue
+  printValue (date) = out $ formatDate date
 
-instance IsValue DateTime where
+instance IsValue ICalDateTime where
   printValue (FloatingDateTime a) =
-    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" a.dateTimeFloating
+    out $ formatDateTime a.dateTimeFloating
   printValue (UTCDateTime a) = printUTCTime a.dateTimeUTC
   printValue (ZonedDateTime a) =
-    out <<< {-T.pack $ -}  formatTime "%C%y%m%dT%H%M%S" a.dateTimeFloating
+    out $ formatDateTime a.dateTimeFloating
 
-instance IsValue (Either Date DateTime) where
+instance IsValue (Either Date ICalDateTime) where
   printValue (Left x) = printValue x
   printValue (Right x) = printValue x
 
@@ -985,9 +1004,9 @@ instance IsValue UTCPeriod where
   printValue (UTCPeriodDuration f d) = printUTCTime f *> putc '/' *> printValue d
 
 instance IsValue RDate where
-  printValue (RDateDates a) = printN printValue $ S.fromFoldable a.rDateDates
-  printValue (RDateDateTimes a) = printN printValue $ S.fromFoldable a.rDateDateTimes
-  printValue (RDatePeriods a) = printN printValue $ S.fromFoldable a.rDatePeriods
+  printValue (RDateDates a) = printN printValue $ List.fromFoldable a.rDateDates
+  printValue (RDateDateTimes a) = printN printValue $ List.fromFoldable a.rDateDateTimes
+  printValue (RDatePeriods a) = printN printValue $ List.fromFoldable a.rDatePeriods
 
 instance IsValue Attachment where
   printValue (UriAttachment a) = printShow a.attachUri
@@ -1000,7 +1019,7 @@ param :: (Text /\ (List (Quoting /\ Text))) -> ContentPrinter Unit
 param (n /\ xs) = putc ';' *> out n *> putc '=' *> paramVals xs
 
 paramVals :: (List (Quoting /\ Text)) -> ContentPrinter Unit
-paramVals (x : xs) = paramVal x *> sequence_ $ map (\x' -> putc ',' *> paramVal x') xs
+paramVals (x : xs) = paramVal x *> (sequence_ $ map (\x' -> putc ',' *> paramVal x') xs)
 paramVals _ = pure unit
 
 paramVal :: (Quoting /\ Text) -> ContentPrinter Unit
@@ -1022,28 +1041,30 @@ text t = case T.uncons t of
   Nothing -> pure unit
 
 bytestring :: ByteString -> ContentPrinter Unit
-bytestring = Foldable.foldl (\m c -> m *> putc8 c) (pure unit)
+bytestring s = Foldable.foldl (\m c -> m *> putc8 c) (pure unit) (CodeUnits.toCharArray s)
 
 out :: Text -> ContentPrinter Unit
-out t = case T.uncons t of
-  Just (c /\ r) -> putc c *> out r
+out t = case CodeUnits.uncons t of
+  Just ({ head: c, tail: r }) -> putc c *> out r
   Nothing -> pure unit
 
 putc :: Char -> ContentPrinter Unit
 putc c = do
   x <- get
-  (b /\ clen) <- asks (_.efChar2Bu &&& _.efChar2Len)
+  (b /\ clen) <- asks ((_.efChar2Bu &&& _.efChar2Len) <<< \(EncodingFunctions x) -> x)
   let cl = clen c
   when (x + cl > 75) foldLine
   tell $ b c
-  modify ((+) cl)
+  _ <- modify ((+) cl)
+  pure unit
 
 putc8 :: Char -> ContentPrinter Unit
 putc8 c = do
   x <- get
   when (x >= 75) foldLine
-  tell $ BS.singleton c
-  modify ((+) 1)
+  tell $ CodeUnits.singleton c
+  _ <- modify ((+) 1)
+  pure unit
 
 foldLine :: ContentPrinter Unit
 foldLine = tell ( {-Bu.byteString-} "\r\n ") *> put 1
@@ -1055,11 +1076,14 @@ newline = tell ( {-Bu.byteString-} "\r\n") *> put 0
 line :: ByteString -> ContentPrinter Unit
 line b = tell ( {-Bu.lazyByteString-} b) *> newline
 
-formatTime :: List FormatterCommand -> DT.DateTime -> String
-formatTime = DF.format
+formatDate :: DT.Date -> String
+formatDate d = DF.format (List.fromFoldable [ DF.YearFull, DF.MonthFull, DF.MonthTwoDigits, DF.DayOfMonthTwoDigits ]) (DT.DateTime d bottom)
 
-printUTCTime :: DT.DateTime -> String
-printUTCTime = formatTime (List.fromFoldable [ YearFull, MonthTwoDigits, DayOfMonthTwoDigits ])
+formatTime :: DT.Time -> String
+formatTime d = DF.format (List.fromFoldable [ DF.Hours24, DF.MinutesTwoDigits, DF.SecondsTwoDigits ]) (DT.DateTime bottom d)
+
+formatDateTime :: DT.DateTime -> String
+formatDateTime (DT.DateTime d t) = formatDate d <> "T" <> formatTime t
 
 -- formatTime :: FormatTime t => String -> t -> String
 -- formatTime = Time.formatTime defaultTimeLocale
