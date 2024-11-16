@@ -4,24 +4,19 @@ module Text.ICalendar.Printer
   -- , printICalendar
   ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.State.Class
-import Control.Monad.Writer.Class
-import Data.Default
-import Data.Monoid
-import Data.Tuple
-import Data.Tuple.Nested
+import Control.Monad.State.Class (get, modify, put)
+import Control.Monad.Writer.Class (tell)
+import Data.Default (def)
+import Data.Tuple.Nested (type (/\), (/\))
 import Prelude
 import Text.ICalendar.Types
 
 import Codec.MIME.Type (MIMEType, showMIMEType)
-import Control.Monad.RWS (get, put, tell, RWS, asks, modify, runRWS)
+import Control.Monad.RWS (RWS, asks)
 import Data.Binary.Base64 as B64
 import Data.CaseInsensitive (CI(..))
 import Data.CaseInsensitive as CI
 import Data.DateTime as DT
-import Data.DateTime as DateTime
 import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Foldable (for_, sequence_, traverse_)
@@ -36,15 +31,9 @@ import Data.Set (Set)
 import Data.Set as S
 import Data.String (toUpper)
 import Data.String as BS
-import Data.String as T
-import Data.String.CodePoints (codePointFromChar, singleton)
-import Data.String.CodePoints as CodePoints
 import Data.String.CodeUnits as CodeUnits
-import Data.Time as Time
-import Data.Unit (Unit(..))
 import Text.ICalendar.Types as Types
 import Text.ICalendar.Types as Ver
-import URI.URI as URI
 
 data UPrintf = UPrintf -- TODO 
 
@@ -140,13 +129,13 @@ printVCalendar (VCalendar a) = do
   line "END:VCALENDAR"
 
 printVTimeZone :: VTimeZone -> ContentPrinter Unit
-printVTimeZone ( {-VTimeZone-} a) = do
+printVTimeZone (a) = do
   line "BEGIN:VTIMEZONE"
   ln $ do
-    prop "TZID" $ a.vtzId.tzidOther
-    text $ a.vtzId.tzidValue
+    prop "TZID" $ tzidOther a.vtzId
+    text $ tzidValue a.vtzId
   printProperty a.vtzLastMod
-  for_ a.vtzUrl $ \url -> do
+  for_ a.vtzUrl $ \(TZUrl url) -> do
     prop "TZURL" $ url.tzUrlOther
     ln <<< printShow $ url.tzUrlValue
   traverse_ (printTZProp "STANDARD") a.vtzStandardC
@@ -159,11 +148,11 @@ printTZProp name (TZProp a) = do
   line $ "BEGIN:" <> name
   printProperty a.tzpDTStart
   ln $ do
-    prop "TZOFFSETTO" $ a.tzpTZOffsetTo.utcOffsetOther
-    printUTCOffset $ a.tzpTZOffsetTo.utcOffsetValue
+    prop "TZOFFSETTO" $ utcOffsetOther a.tzpTZOffsetTo
+    printUTCOffset $ utcOffsetValue a.tzpTZOffsetTo
   ln $ do
-    prop "TZOFFSETFROM" $ a.tzpTZOffsetTo.utcOffsetOther
-    printUTCOffset $ a.tzpTZOffsetFrom.utcOffsetValue
+    prop "TZOFFSETFROM" $ utcOffsetOther a.tzpTZOffsetTo
+    printUTCOffset $ utcOffsetValue a.tzpTZOffsetFrom
   printProperty a.tzpRRule
   printProperty a.tzpComment
   printProperty a.tzpRDate
@@ -1079,7 +1068,7 @@ newline = tell ( {-Bu.byteString-} "\r\n") *> put 0
 
 -- | Output a whole line. Must be less than 75 bytes.
 line :: ByteString -> ContentPrinter Unit
-line b = tell ( {-Bu.lazyByteString-} b) *> newline
+line b = tell b *> newline
 
 formatDate :: DT.Date -> String
 formatDate d = DF.format (List.fromFoldable [ DF.YearFull, DF.MonthFull, DF.MonthTwoDigits, DF.DayOfMonthTwoDigits ]) (DT.DateTime d bottom)
@@ -1090,6 +1079,7 @@ formatTime d = DF.format (List.fromFoldable [ DF.Hours24, DF.MinutesTwoDigits, D
 formatDateTime :: DT.DateTime -> String
 formatDateTime (DT.DateTime d t) = formatDate d <> "T" <> formatTime t
 
+-- TODO
 -- formatTime :: FormatTime t => String -> t -> String
 -- formatTime = Time.formatTime defaultTimeLocale
 

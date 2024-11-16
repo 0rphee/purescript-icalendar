@@ -882,6 +882,15 @@ data TZID = TZID
   , tzidOther :: OtherParams
   }
 
+tzidValue :: TZID -> Text
+tzidValue (TZID a) = a.tzidValue
+
+tzidGlobal :: TZID -> Boolean
+tzidGlobal (TZID a) = a.tzidGlobal
+
+tzidOther :: TZID -> OtherParams
+tzidOther (TZID a) = a.tzidOther
+
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Time Zone Name. 3.8.3.2.
 
@@ -899,6 +908,12 @@ data UTCOffset = UTCOffset
   , utcOffsetOther :: OtherParams
   }
 
+utcOffsetValue :: UTCOffset -> Int
+utcOffsetValue (UTCOffset a) = a.utcOffsetValue
+
+utcOffsetOther :: UTCOffset -> OtherParams
+utcOffsetOther (UTCOffset a) = a.utcOffsetOther
+
 -- deriving ( Show, Eq, Ord, dataable )
 -- | Time Zone URL. 3.8.3.5.
 
@@ -907,7 +922,13 @@ data TZUrl = TZUrl
   , tzUrlOther :: OtherParams
   }
 
--- deriving ( Show, Eq, Ord, dataable )
+tzUrlValue :: TZUrl -> UriM
+tzUrlValue (TZUrl a) = a.tzUrlValue
+
+tzUrlOther :: TZUrl -> OtherParams
+tzUrlOther (TZUrl a) = a.tzUrlOther
+
+-- -- deriving ( Show, Eq, Ord, dataable )
 -- | Attendee. 3.8.4.1.
 
 data Attendee = Attendee
