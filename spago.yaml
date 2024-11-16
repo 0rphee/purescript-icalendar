@@ -1,5 +1,5 @@
 package:
-  name: icalendar-elm
+  name: icalendar
   dependencies:
     - arraybuffer-types
     - b64
