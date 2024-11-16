@@ -10,6 +10,7 @@ package:
     - foldable-traversable
     - formatters
     - lists
+    - numbers
     - prelude
     - profunctor
     - strings

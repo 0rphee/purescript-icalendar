@@ -1,30 +1,29 @@
 module Text.ICalendar.Printer
   ( EncodingFunctions(..)
-  , Builder
-  -- , printICalendar
+  , printICalendar
   ) where
 
-import Control.Monad.State.Class (get, modify, put)
-import Control.Monad.Writer.Class (tell)
-import Data.Default (def)
-import Data.Tuple.Nested (type (/\), (/\))
 import Prelude
 import Text.ICalendar.Types
 
-import Codec.MIME.Type (MIMEType, showMIMEType)
-import Control.Monad.RWS (RWS, asks)
+import Codec.MIME.Type as MIME
+import Control.Monad.RWS (RWS, RWSResult(..), asks, runRWS)
+import Control.Monad.State.Class (get, modify, put)
+import Control.Monad.Writer.Class (tell)
 import Data.Binary.Base64 as B64
 import Data.CaseInsensitive (CI(..))
 import Data.CaseInsensitive as CI
 import Data.DateTime as DT
+import Data.Default (class Default, def)
 import Data.Either (Either(..))
-import Data.Enum (fromEnum)
 import Data.Foldable (for_, sequence_, traverse_)
 import Data.Foldable as Foldable
 import Data.Formatter.DateTime as DF
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
+import Data.Number.Format (toStringWith)
+import Data.Number.Format as DNF
 import Data.Ord (abs, signum)
 import Data.Profunctor.Strong ((&&&))
 import Data.Set (Set)
@@ -32,27 +31,16 @@ import Data.Set as S
 import Data.String (toUpper)
 import Data.String as BS
 import Data.String.CodeUnits as CodeUnits
+import Data.Tuple.Nested (type (/\), (/\))
 import Text.ICalendar.Types as Types
 import Text.ICalendar.Types as Ver
-
-data UPrintf = UPrintf -- TODO 
-
-class PrintfType t where -- TODO
-  spr :: String -> List UPrintf -> t
-
-printf :: forall t. PrintfType t => String -> t -- TODO
-printf fmts = spr fmts Nil
-
-type Builder = String -- TODO
-
-type ByteString = String -- TODO
 
 lsing :: forall a. a -> List a
 lsing = List.singleton
 
 -- | Functions for encoding into bytestring builders.
 data EncodingFunctions = EncodingFunctions
-  { efChar2Bu :: Char -> Builder
+  { efChar2Bu :: Char -> String
   , efChar2Len :: Char -> Int -- ^ How many octets the character is encoded.
   }
 
@@ -62,17 +50,17 @@ divMod a b = l /\ r
   l = div a b
   r = mod a b
 
-utf8Len :: Char -> Int
-utf8Len c = h
-  where
-  o = fromEnum c
-  h
-    | o < 0x80 = 1
-    | o < 0x800 = 2
-    | o < 0x10000 = 3
-    | o < 0x200000 = 4
-    | o < 0x4000000 = 5
-    | otherwise = 6
+-- utf8Len :: Char -> Int
+-- utf8Len c = h
+--   where
+--   o = fromEnum c
+--   h
+--     | o < 0x80 = 1
+--     | o < 0x800 = 2
+--     | o < 0x10000 = 3
+--     | o < 0x200000 = 4
+--     | o < 0x4000000 = 5
+--     | otherwise = 6
 
 newtype AltRep = AltRep UriM
 newtype CN = CN Text
@@ -88,19 +76,19 @@ data Quoting = NeedQuotes | Optional | NoQuotes
 derive instance Eq Quoting
 derive instance Ord Quoting
 
--- TODO
+-- TODO efChar2Len: correctness for utf16 in js strings?
 -- | UTF8.
--- instance Default EncodingFunctions where
---   def = EncodingFunctions Bu.charUtf8
---     utf8Len
+instance Default EncodingFunctions where
+  def = EncodingFunctions
+    { efChar2Bu: CodeUnits.singleton, efChar2Len: const 1 }
 
-type ContentPrinter a = RWS EncodingFunctions Builder Int a
+type ContentPrinter a = RWS EncodingFunctions String Int a
 
--- TODO
 -- | Print a VCalendar object to a ByteString.
--- printICalendar :: EncodingFunctions -> VCalendar -> ByteString
--- printICalendar r v = (\(_ /\ _ /\ x) -> Bu.toLazyByteString x) $
---   runRWS (printVCalendar v) r 0
+printICalendar :: EncodingFunctions -> VCalendar -> String
+printICalendar r v = wr
+  where
+  (RWSResult _ _ wr) = runRWS (printVCalendar v) r 0
 
 -- {{{ Component printers
 
@@ -129,7 +117,7 @@ printVCalendar (VCalendar a) = do
   line "END:VCALENDAR"
 
 printVTimeZone :: VTimeZone -> ContentPrinter Unit
-printVTimeZone (a) = do
+printVTimeZone a = do
   line "BEGIN:VTIMEZONE"
   ln $ do
     prop "TZID" $ tzidOther a.vtzId
@@ -143,7 +131,7 @@ printVTimeZone (a) = do
   traverse_ printProperty a.vtzOther
   line "END:VTIMEZONE"
 
-printTZProp :: ByteString -> TZProp -> ContentPrinter Unit
+printTZProp :: String -> TZProp -> ContentPrinter Unit
 printTZProp name (TZProp a) = do
   line $ "BEGIN:" <> name
   printProperty a.tzpDTStart
@@ -156,9 +144,9 @@ printTZProp name (TZProp a) = do
   printProperty a.tzpRRule
   printProperty a.tzpComment
   printProperty a.tzpRDate
-  for_ a.tzpTZName $ \(TZName a) -> ln $ do
-    prop "TZNAME" $ toParam a.tzNameLanguage <> toParam a.tzNameOther
-    text a.tzNameValue
+  for_ a.tzpTZName $ \(TZName b) -> ln $ do
+    prop "TZNAME" $ toParam b.tzNameLanguage <> toParam b.tzNameOther
+    text b.tzNameValue
   traverse_ printProperty a.tzpOther
   line $ "END:" <> name
 
@@ -408,9 +396,10 @@ instance IsProperty Description where
 instance IsProperty Geo where
   printProperty (Geo a) = ln $ do
     prop "GEO" a.geoOther
-    -- TODO
-    -- out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
+    out $ fmt a.geoLat <> "," <> fmt a.geoLong
     pure unit
+    where
+    fmt v = DNF.toStringWith (DNF.precision 6) v
 
 instance IsProperty LastModified where
   printProperty (LastModified a) = ln $ do
@@ -588,13 +577,12 @@ instance IsProperty Trigger where
 prop
   :: forall a
    . ToParam a
-  => ByteString
+  => String
   -> a
   -> ContentPrinter Unit
 prop b x = do
   put (BS.length b)
-  -- TODO  
-  -- tell (Bu.lazyByteString b) 
+  tell b
   traverse_ param $ toParam x
   out ":"
 
@@ -672,11 +660,10 @@ instance ToParam DTStamp where
   toParam (DTStamp a) = toParam a.dtStampOther
 
 instance ToParam OtherParams where
-  toParam (OtherParams l) = Nil -- map fromOP val
+  toParam (OtherParams l) = map fromOP $ List.fromFoldable l
     where
-    fromOP :: OtherParam -> List _
-    fromOP (OtherParam (CI x) y) = lsing (x.original /\ (map (\v -> Optional /\ v) y))
-    val = List.fromFoldable l
+    fromOP :: OtherParam -> (String /\ List (Quoting /\ String))
+    fromOP (OtherParam (CI x) y) = (x.original /\ ((\v -> Optional /\ v) <$> y))
 
 instance ToParam Language where
   toParam (Language x) = lsing (("LANGUAGE" /\ lsing ((Optional /\ CI.original x))))
@@ -693,12 +680,10 @@ instance ToParam (Text /\ (List (Quoting /\ Text))) where
 instance ToParam RecurrenceId where
   toParam (RecurrenceIdDate a) = lsing (("VALUE" /\ lsing ((NoQuotes /\ "DATE"))))
     <> toParam a.recurrenceIdRange
-    <>
-      toParam a.recurrenceIdOther
+    <> toParam a.recurrenceIdOther
   toParam (RecurrenceIdDateTime a) = toParam a.recurrenceIdDateTime
     <> toParam a.recurrenceIdRange
-    <>
-      toParam a.recurrenceIdOther
+    <> toParam a.recurrenceIdOther
 
 instance ToParam Range where
   toParam ThisAndFuture = lsing (("RANGE" /\ lsing ((NoQuotes /\ "THISANDFUTURE"))))
@@ -712,8 +697,8 @@ instance ToParam FBType where
   toParam BusyTentative = lsing (("FBTYPE" /\ lsing ((NoQuotes /\ "BUSY-TENTATIVE"))))
   toParam (FBTypeX x) = lsing (("FBTYPE" /\ lsing ((Optional /\ CI.original x))))
 
-instance ToParam MIMEType where
-  toParam m = lsing (("FMTTYPE" /\ lsing ((NoQuotes /\ {-T.fromStrict $-}  showMIMEType m))))
+instance ToParam MIME.MIMEType where
+  toParam m = lsing (("FMTTYPE" /\ lsing ((NoQuotes /\ MIME.showMIMEType m))))
 
 instance ToParam Attachment where
   toParam (UriAttachment a) = toParam a.attachFmtType <>
@@ -831,13 +816,15 @@ printUTCOffset n = do
   case signum n of
     -1 -> putc '-'
     _ -> putc '+'
-  -- TODO
-  -- out $ printf "%02d" t
-  -- out $ printf "%02d" m
-  -- when (s > 0) <<< out $ printf "%02d" s
+  out $ fmt t
+  out $ fmt m
+  when (s > 0) <<< out $ fmt s
   where
   (m' /\ s) = abs n `divMod` 60
   (t /\ m) = m' `divMod` 60
+  fmt int
+    | 0 <= int && int <= 9 = "0" <> show int
+    | otherwise = show int
 
 printNWeekday :: Either (Int /\ DT.Weekday) DT.Weekday -> ContentPrinter Unit
 printNWeekday (Left (n /\ w)) = printShow n *> printValue w
@@ -901,8 +888,8 @@ instance IsValue Recur where
       out ";WKST=" *> printValue a.recurWkSt
 
 instance IsValue TimeTransparency where
-  printValue (Opaque a) = out "OPAQUE"
-  printValue (Transparent a) = out "TRANSPARENT"
+  printValue (Opaque _) = out "OPAQUE"
+  printValue (Transparent _) = out "TRANSPARENT"
 
 instance IsValue DTEnd where
   printValue (DTEndDateTime a) = printValue a.dtEndDateTimeValue
@@ -1034,7 +1021,7 @@ text t = case map (\{ head: h, tail: r } -> h /\ r) $ CodeUnits.uncons t of
   Just (c /\ r) -> putc c *> text r
   Nothing -> pure unit
 
-bytestring :: ByteString -> ContentPrinter Unit
+bytestring :: String -> ContentPrinter Unit
 bytestring s = Foldable.foldl (\m c -> m *> putc8 c) (pure unit) (CodeUnits.toCharArray s)
 
 out :: Text -> ContentPrinter Unit
@@ -1045,7 +1032,7 @@ out t = case CodeUnits.uncons t of
 putc :: Char -> ContentPrinter Unit
 putc c = do
   x <- get
-  (b /\ clen) <- asks ((_.efChar2Bu &&& _.efChar2Len) <<< \(EncodingFunctions x) -> x)
+  (b /\ clen) <- asks ((_.efChar2Bu &&& _.efChar2Len) <<< \(EncodingFunctions r) -> r)
   let cl = clen c
   when (x + cl > 75) foldLine
   tell $ b c
@@ -1061,13 +1048,13 @@ putc8 c = do
   pure unit
 
 foldLine :: ContentPrinter Unit
-foldLine = tell ( {-Bu.byteString-} "\r\n ") *> put 1
+foldLine = tell "\r\n " *> put 1
 
 newline :: ContentPrinter Unit
-newline = tell ( {-Bu.byteString-} "\r\n") *> put 0
+newline = tell "\r\n" *> put 0
 
 -- | Output a whole line. Must be less than 75 bytes.
-line :: ByteString -> ContentPrinter Unit
+line :: String -> ContentPrinter Unit
 line b = tell b *> newline
 
 formatDate :: DT.Date -> String
