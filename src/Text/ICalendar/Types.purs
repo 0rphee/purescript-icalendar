@@ -241,6 +241,12 @@ data ProdId = ProdId
   , prodIdOther :: OtherParams
   }
 
+prodIdOther :: ProdId -> OtherParams
+prodIdOther (ProdId a) = a.prodIdOther
+
+prodIdValue :: ProdId -> Text
+prodIdValue (ProdId a) = a.prodIdValue
+
 -- deriving
 -- ( Show, Eq, Ord, dataable )
 -- | Version. 3.7.4.
@@ -258,12 +264,29 @@ data ICalVersion
 
 -- deriving
 -- ( Show, Eq, Ord, dataable )
+
+versionOther :: ICalVersion -> OtherParams
+versionOther a = case a of
+  MaxICalVersion b -> b.versionOther
+  MinMaxICalVersion b -> b.versionOther
+
+versionMax :: ICalVersion -> Version
+versionMax a = case a of
+  MaxICalVersion b -> b.versionMax
+  MinMaxICalVersion b -> b.versionMax
+
 -- | Calendar Scale. 3.7.1.
 
 data Scale = Scale
   { scaleValue :: CI
   , scaleOther :: OtherParams
   }
+
+scaleValue :: Scale -> CI
+scaleValue (Scale a) = a.scaleValue
+
+scaleOther :: Scale -> OtherParams
+scaleOther (Scale a) = a.scaleOther
 
 -- deriving
 -- ( Show, Eq, Ord, dataable )
@@ -1006,7 +1029,7 @@ derive instance Ord Range
 -- | Related To. 3.8.4.5.
 data RelatedTo = RelatedTo
   { relatedToValue :: Text
-  , relatedTodata :: RelationshipType
+  , relatedToType :: RelationshipType
   , relatedToOther :: OtherParams
   }
 
@@ -1092,6 +1115,16 @@ data Frequency
 derive instance Eq Frequency
 derive instance Ord Frequency
 
+instance Show Frequency where
+  show a = case a of
+    Secondly -> "Secondly"
+    Minutely -> "Minutely"
+    Hourly -> "Hourly"
+    Daily -> "Daily"
+    Weekly -> "Weekly"
+    Monthly -> "Monthly"
+    Yearly -> "Yearly"
+
 -- | Weekday, in recurrences. 3.3.10.
 type Weekday = DT.Weekday
 
@@ -1134,9 +1167,9 @@ data Repeat = Repeat
 derive instance Eq Repeat
 derive instance Ord Repeat
 
-defRepeat :: Repeat
-defRepeat =
-  Repeat { repeatValue: 0, repeatOther: def }
+instance Default Repeat where
+  def :: Repeat
+  def = Repeat { repeatValue: 0, repeatOther: def }
 
 -- | Alarm Trigger Relationship. 3.2.14.
 

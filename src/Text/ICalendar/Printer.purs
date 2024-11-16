@@ -1,10 +1,6 @@
--- {-# LANGUAGE FlexibleInstances #-}
--- {-# LANGUAGE OverloadedStrings #-}
--- {-# LANGUAGE RecordWildCards   #-}
--- {-# LANGUAGE TupleSections     #-}
--- {-# LANGUAGE CPP #-}
 module Text.ICalendar.Printer
   ( EncodingFunctions(..)
+  , Builder
   -- , printICalendar
   ) where
 
@@ -52,16 +48,17 @@ import URI.URI as URI
 
 data UPrintf = UPrintf -- TODO 
 
-class PrintfType t where
+class PrintfType t where -- TODO
   spr :: String -> List UPrintf -> t
 
-printf :: forall t. PrintfType t => String -> t
+printf :: forall t. PrintfType t => String -> t -- TODO
 printf fmts = spr fmts Nil
 
 type Builder = String -- TODO
 
 type ByteString = String -- TODO
 
+lsing :: forall a. a -> List a
 lsing = List.singleton
 
 -- | Functions for encoding into bytestring builders.
@@ -102,6 +99,7 @@ data Quoting = NeedQuotes | Optional | NoQuotes
 derive instance Eq Quoting
 derive instance Ord Quoting
 
+-- TODO
 -- | UTF8.
 -- instance Default EncodingFunctions where
 --   def = EncodingFunctions Bu.charUtf8
@@ -109,6 +107,7 @@ derive instance Ord Quoting
 
 type ContentPrinter a = RWS EncodingFunctions Builder Int a
 
+-- TODO
 -- | Print a VCalendar object to a ByteString.
 -- printICalendar :: EncodingFunctions -> VCalendar -> ByteString
 -- printICalendar r v = (\(_ /\ _ /\ x) -> Bu.toLazyByteString x) $
@@ -120,17 +119,17 @@ printVCalendar :: VCalendar -> ContentPrinter Unit
 printVCalendar (VCalendar a) = do
   line "BEGIN:VCALENDAR"
   ln $ do
-    prop "VERSION" $ a.vcVersion.versionOther -- Should be first for
+    prop "VERSION" $ versionOther a.vcVersion -- Should be first for
     printValue a.vcVersion -- compatibility.
   ln $ do
-    prop "PRODID" $ a.vcProdId.prodIdOther
-    text $ a.vcProdId.prodIdValue
+    prop "PRODID" $ prodIdOther a.vcProdId
+    text $ prodIdValue a.vcProdId
   ln $ do
-    prop "CALSCALE" $ a.vcScalescaleOther
-    text <<< _.original $ a.vcScalescaleValue
-  for_ a.vcMethod $ \meth -> do
+    prop "CALSCALE" $ scaleOther a.vcScale
+    text <<< CI.original $ scaleValue a.vcScale
+  for_ a.vcMethod $ \(Method meth) -> do
     prop "METHOD" $ meth.methodOther
-    ln <<< text <<< _.original $ meth.methodValue
+    ln <<< text <<< CI.original $ meth.methodValue
   traverse_ printProperty a.vcOther
   traverse_ printVTimeZone a.vcTimeZones
   traverse_ printVEvent a.vcEvents
@@ -144,12 +143,12 @@ printVTimeZone :: VTimeZone -> ContentPrinter Unit
 printVTimeZone ( {-VTimeZone-} a) = do
   line "BEGIN:VTIMEZONE"
   ln $ do
-    prop "TZID" $ a.tzidOther.vtzId
+    prop "TZID" $ a.vtzId.tzidOther
     text $ a.vtzId.tzidValue
   printProperty a.vtzLastMod
   for_ a.vtzUrl $ \url -> do
-    prop "TZURL" $ a.url.tzUrlOther
-    ln.printShow $ a.url.tzUrlValue
+    prop "TZURL" $ url.tzUrlOther
+    ln <<< printShow $ url.tzUrlValue
   traverse_ (printTZProp "STANDARD") a.vtzStandardC
   traverse_ (printTZProp "DAYLIGHT") a.vtzDaylightC
   traverse_ printProperty a.vtzOther
@@ -302,39 +301,43 @@ printVOther (VOther a) = do
 printVAlarm :: VAlarm -> ContentPrinter Unit
 printVAlarm va = do
   line "BEGIN:VALARM"
-  prop "ACTION" $ va.vaActionOther
   case va of
     (VAlarmAudio a) -> do
+      prop "ACTION" $ a.vaActionOther
       ln $ bytestring "AUDIO"
       printProperty a.vaTrigger
-      repAndDur
+      repAndDur a.vaRepeat a.vaDuration
       printProperty a.vaAudioAttach
       printProperty a.vaOther
     (VAlarmDisplay a) -> do
+      prop "ACTION" $ a.vaActionOther
       ln $ bytestring "DISPLAY"
       printProperty a.vaTrigger
       printProperty a.vaDescription
-      repAndDur
+      repAndDur a.vaRepeat a.vaDuration
       printProperty a.vaOther
     (VAlarmEmail a) -> do
+      prop "ACTION" $ a.vaActionOther
       ln $ bytestring "EMAIL"
       printProperty a.vaTrigger
       printProperty a.vaDescription
       printProperty a.vaSummary
       printProperty a.vaAttendee
-      repAndDur
+      repAndDur a.vaRepeat a.vaDuration
       printProperty a.vaMailAttach
       printProperty a.vaOther
     (VAlarmX a) -> do
-      ln.out $ CI.original a.vaAction
+      prop "ACTION" $ a.vaActionOther
+      ln <<< out $ CI.original a.vaAction
       printProperty a.vaTrigger
       printProperty a.vaOther
   line "END:VALARM"
   where
-  repAndDur = unless (va.vaRepeat == def) $ do
-    printProperty $ va.vaRepeat
-    unless (va.vaRepeat.repeatValue == 0) $
-      for_ (va.vaDuration) printProperty
+  repAndDur :: Repeat -> Maybe DurationProp -> ContentPrinter Unit
+  repAndDur vaRepeat@(Repeat r) vaDuration = unless (vaRepeat == def) $ do
+    printProperty $ vaRepeat
+    unless (r.repeatValue == 0) $
+      for_ (vaDuration) printProperty
 
 -- }}}
 -- {{{ Property printers.
@@ -416,9 +419,9 @@ instance IsProperty Description where
 instance IsProperty Geo where
   printProperty (Geo a) = ln $ do
     prop "GEO" a.geoOther
-
--- TODO
--- out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
+    -- TODO
+    -- out <<< {-  undefined $ -}  printf "%.6f;%.6f" a.geoLat a.geoLong
+    pure unit
 
 instance IsProperty LastModified where
   printProperty (LastModified a) = ln $ do
@@ -570,7 +573,7 @@ instance IsProperty RelatedTo where
 instance IsProperty Resources where
   printProperty (Resources a) = ln $ do
     prop "RESOURCES" $ toParam (AltRep <$> a.resourcesAltRep)
-      <> toParam a.aresourcesLanguage
+      <> toParam a.resourcesLanguage
       <> toParam a.resourcesOther
     texts $ List.fromFoldable a.resourcesValue
 
@@ -601,7 +604,8 @@ prop
   -> ContentPrinter Unit
 prop b x = do
   put (BS.length b)
-  -- tell (Bu.lazyByteString b) TODO
+  -- TODO  
+  -- tell (Bu.lazyByteString b) 
   traverse_ param $ toParam x
   out ":"
 
@@ -787,7 +791,7 @@ instance ToParam DelTo where
     | otherwise =
         lsing
           ( ( "DELEGATED-TO"
-                /\ ((\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show <$> List.fromFoldable x)
+                /\ ((\v -> NeedQuotes /\ v) <<< show <$> List.fromFoldable x)
             )
           )
 
@@ -798,7 +802,7 @@ instance ToParam DelFrom where
         lsing
           ( ( "DELEGATED-FROM"
                 /\
-                  ( (\v -> NeedQuotes /\ v) <<< {-T.pack <<< -}  show
+                  ( (\v -> NeedQuotes /\ v) <<< show
                       <$> List.fromFoldable x
                   )
             )
@@ -838,9 +842,10 @@ printUTCOffset n = do
   case signum n of
     -1 -> putc '-'
     _ -> putc '+'
-  out <<< {-T.pack $ -}  printf "%02d" t
-  out <<< {-T.pack $ -}  printf "%02d" m
-  when (s > 0) <<< out <<< {-T.pack $ -}  printf "%02d" s
+  -- TODO
+  -- out $ printf "%02d" t
+  -- out $ printf "%02d" m
+  -- when (s > 0) <<< out $ printf "%02d" s
   where
   (m' /\ s) = abs n `divMod` 60
   (t /\ m) = m' `divMod` 60
@@ -869,11 +874,11 @@ class IsValue a where
   printValue :: a -> ContentPrinter Unit
 
 instance IsValue ICalVersion where
-  printValue (MaxICalVersion a) = out <<< {-T.pack $ -}  Ver.showVersion a.versionMax
+  printValue (MaxICalVersion a) = out $ Ver.showVersion a.versionMax
   printValue (MinMaxICalVersion a) = do
-    out <<< {-T.pack $ -}  Ver.showVersion a.versionMin
+    out $ Ver.showVersion a.versionMin
     putc ';'
-    out <<< {-T.pack $ -}  Ver.showVersion a.versionMax
+    out $ Ver.showVersion a.versionMax
 
 instance IsValue Recur where
   printValue (Recur a) = do
@@ -1028,11 +1033,11 @@ paramVal (NoQuotes /\ t) = out t
 paramVal (_ /\ t) = paramVal (NeedQuotes /\ t)
 
 texts :: (List Text) -> ContentPrinter Unit
-texts (x : xs) = text x *> sequence_ $ map (\x' -> putc ',' *> text x') xs
+texts (x : xs) = text x *> (sequence_ $ map (\x' -> putc ',' *> text x') xs)
 texts _ = pure unit
 
 text :: Text -> ContentPrinter Unit
-text t = case T.uncons t of
+text t = case map (\{ head: h, tail: r } -> h /\ r) $ CodeUnits.uncons t of
   Just (';' /\ r) -> out "\\;" *> text r
   Just ('\n' /\ r) -> out "\\n" *> text r
   Just (',' /\ r) -> out "\\," *> text r
