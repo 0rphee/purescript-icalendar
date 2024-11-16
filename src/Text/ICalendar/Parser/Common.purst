@@ -1,60 +1,61 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE CPP #-}
+-- {-# LANGUAGE OverloadedStrings   #-}
+-- {-# LANGUAGE ScopedTypeVariables #-}
+-- {-# LANGUAGE CPP #-}
 module Text.ICalendar.Parser.Common where
 
 import           Control.Applicative
 import           Control.Arrow                (second)
 import           Control.Monad                (when, unless, (<=<))
 import           Control.Monad.Except
-import           Control.Monad.RWS            (MonadState (get, put),
-                                               MonadWriter (tell), RWS, asks,
+import           Control.Monad.RWS            (MonadState(..), get, put,
+                                               MonadWriter(..), tell, RWS, asks,
                                                modify)
-import qualified Data.ByteString.Builder      as Bu
-import           Data.ByteString.Lazy.Char8   (ByteString)
-import qualified Data.ByteString.Lazy.Char8   as B
-import           Data.CaseInsensitive         (CI)
-import qualified Data.CaseInsensitive         as CI
-import           Data.Char
-import           Data.Default
-import           Data.List                    (partition)
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Set                     (Set)
-import qualified Data.Set                     as S
-import           Data.Text.Lazy               (Text)
-import qualified Data.Text.Lazy               as T
-import qualified Data.Text.Lazy.Encoding      as TE
-import           Data.Time                    (Day, LocalTime (LocalTime),
-                                               TimeOfDay (), UTCTime (UTCTime))
-import qualified Data.Time                    as Time
-import           Data.Traversable             (mapM)
-import qualified Network.URI                  as URI
-import           Prelude                      hiding (mapM)
+import Data.ByteString.Builder      as Bu
+import Data.ByteString.Lazy.Char8   (ByteString)
+import Data.ByteString.Lazy.Char8   as B
+import Data.CaseInsensitive         (CI)
+import Data.CaseInsensitive         as CI
+import Data.Char
+import Data.Default
+import Data.List                    (partition)
+import Data.Maybe
+import Data.Monoid
+import Data.Set                     (Set)
+import Data.Set                     as S
+import Data.Text.Lazy               (Text)
+import Data.Text.Lazy               as T
+import Data.Text.Lazy.Encoding      as TE
+import Data.Time                    (Day, LocalTime (LocalTime),
+                                     TimeOfDay (), UTCTime (UTCTime))
+import Data.Time                    as Time
+import Data.Traversable             (mapM)
+import Network.URI                  as URI
+import Prelude                      hiding (mapM)
 
-#if MIN_VERSION_time(1,5,0)
-import Data.Time (defaultTimeLocale)
-#else
-import System.Locale (defaultTimeLocale)
-#endif
+-- #if MIN_VERSION_time(1,5,0)
+-- import Data.Time (defaultTimeLocale)
+-- #else
+-- import System.Locale (defaultTimeLocale)
+-- #endif
 
-import qualified Text.Parsec            as P
-import           Text.Parsec.Combinator hiding (optional)
-import           Text.Parsec.Prim       hiding ((<|>))
+import Text.Parsec            as P
+import Text.Parsec.Combinator hiding (optional)
+import Text.Parsec.Prim       hiding ((<|>))
 
 import Text.ICalendar.Types
 
 -- | Content lines, separated into components. 3.1.
-data Content = ContentLine P.SourcePos (CI Text) [(CI Text, [Text])] ByteString
-             | Component P.SourcePos (CI Text) [Content]
-               deriving (Show, Eq, Ord)
+data Content = ContentLine P.SourcePos CI (List (T2 CI (List String))) String
+             | Component P.SourcePos CI (List Content)
+derive instance Eq Content
+derive instance Ord Content
 
 type TextParser = P.Parsec ByteString DecodingFunctions
 
 type ContentParser = ExceptT String -- Fatal errors.
                             (RWS DecodingFunctions
-                                 [String] -- Warnings.
-                                 (P.SourcePos, [Content]))
+                                 (List String) -- Warnings.
+                                 (T2 P.SourcePos (List Content)))
 
 -- | Functions for decoding 'ByteString's into 'Text'.
 data DecodingFunctions = DecodingFunctions
